@@ -123,7 +123,12 @@ lldp_send(struct lldpd *global,
 		goto toobig;
 
 	/* System name */
+#ifdef ENABLE_OVSDB
+        if ( (global->g_config.c_lldp_tlv_sys_name_enable) &&
+             (chassis->c_name && *chassis->c_name != '\0') ) {
+#else
 	if (chassis->c_name && *chassis->c_name != '\0') {
+#endif
 		if (!(
 			    POKE_START_LLDP_TLV(LLDP_TLV_SYSTEM_NAME) &&
 			    POKE_BYTES(chassis->c_name, strlen(chassis->c_name)) &&
@@ -132,7 +137,12 @@ lldp_send(struct lldpd *global,
 	}
 
 	/* System description (skip it if empty) */
+#ifdef ENABLE_OVSDB
+        if ( (global->g_config.c_lldp_tlv_sys_desc_enable) &&
+             (chassis->c_descr && *chassis->c_descr != '\0') ) {
+#else
 	if (chassis->c_descr && *chassis->c_descr != '\0') {
+#endif
 		if (!(
 			    POKE_START_LLDP_TLV(LLDP_TLV_SYSTEM_DESCR) &&
 			    POKE_BYTES(chassis->c_descr, strlen(chassis->c_descr)) &&
@@ -141,15 +151,24 @@ lldp_send(struct lldpd *global,
 	}
 
 	/* System capabilities */
-	if (!(
-	      POKE_START_LLDP_TLV(LLDP_TLV_SYSTEM_CAP) &&
-	      POKE_UINT16(chassis->c_cap_available) &&
-	      POKE_UINT16(chassis->c_cap_enabled) &&
-	      POKE_END_LLDP_TLV))
+#ifdef ENABLE_OVSDB
+        if (global->g_config.c_lldp_tlv_sys_cap_enable) {
+#endif
+            if (!(
+                  POKE_START_LLDP_TLV(LLDP_TLV_SYSTEM_CAP) &&
+                  POKE_UINT16(chassis->c_cap_available) &&
+                  POKE_UINT16(chassis->c_cap_enabled) &&
+                  POKE_END_LLDP_TLV))
 		goto toobig;
+#ifdef ENABLE_OVSDB
+        }
+#endif
 
 	/* Management addresses */
-	TAILQ_FOREACH(mgmt, &chassis->c_mgmt, m_entries) {
+#ifdef ENABLE_OVSDB
+        if (global->g_config.c_lldp_tlv_mgmt_addr_enable) {
+#endif
+            TAILQ_FOREACH(mgmt, &chassis->c_mgmt, m_entries) {
 		proto = lldpd_af_to_lldp_proto(mgmt->m_family);
 		assert(proto != LLDP_MGMT_ADDR_NONE);
 		if (!(
@@ -179,10 +198,18 @@ lldp_send(struct lldpd *global,
 			  POKE_UINT8(0) &&
 			  POKE_END_LLDP_TLV))
 			goto toobig;
-	}
+            }
+#ifdef ENABLE_OVSDB
+        }
+#endif
 
 	/* Port description */
+#ifdef ENABLE_OVSDB
+        if ( (global->g_config.c_lldp_tlv_port_desc_enable) &&
+             (port->p_descr && *port->p_descr != '\0') ) {
+#else
 	if (port->p_descr && *port->p_descr != '\0') {
+#endif
 		if (!(
 			    POKE_START_LLDP_TLV(LLDP_TLV_PORT_DESCR) &&
 			    POKE_BYTES(port->p_descr, strlen(port->p_descr)) &&
@@ -192,7 +219,12 @@ lldp_send(struct lldpd *global,
 
 #ifdef ENABLE_DOT1
 	/* Port VLAN ID */
+#ifdef ENABLE_OVSDB
+        if ( (global->g_config.c_lldp_tlv_port_vlanid_enable) &&
+             (port->p_pvid != 0) ) {
+#else
 	if(port->p_pvid != 0) {
+#endif
 		if (!(
 		    POKE_START_LLDP_TLV(LLDP_TLV_ORG) &&
 		    POKE_BYTES(dot1, sizeof(dot1)) &&
@@ -203,7 +235,10 @@ lldp_send(struct lldpd *global,
 		}
 	}
 	/* Port and Protocol VLAN IDs */
-	TAILQ_FOREACH(ppvid, &port->p_ppvids, p_entries) {
+#ifdef ENABLE_OVSDB
+        if (global->g_config.c_lldp_tlv_port_proto_vlanid_enable) {
+#endif
+            TAILQ_FOREACH(ppvid, &port->p_ppvids, p_entries) {
 		if (!(
 		      POKE_START_LLDP_TLV(LLDP_TLV_ORG) &&
 		      POKE_BYTES(dot1, sizeof(dot1)) &&
@@ -213,21 +248,33 @@ lldp_send(struct lldpd *global,
 		      POKE_END_LLDP_TLV)) {
 			goto toobig;
 		}
-	}
-	/* VLANs */
-	TAILQ_FOREACH(vlan, &port->p_vlans, v_entries) {
-		if (!(
-		      POKE_START_LLDP_TLV(LLDP_TLV_ORG) &&
-		      POKE_BYTES(dot1, sizeof(dot1)) &&
-		      POKE_UINT8(LLDP_TLV_DOT1_VLANNAME) &&
-		      POKE_UINT16(vlan->v_vid) &&
-		      POKE_UINT8(strlen(vlan->v_name)) &&
-		      POKE_BYTES(vlan->v_name, strlen(vlan->v_name)) &&
-		      POKE_END_LLDP_TLV))
-			goto toobig;
-	}
+            }
+#ifdef ENABLE_OVSDB
+        }
+#endif
+        /* VLANs */
+#ifdef ENABLE_OVSDB
+        if (global->g_config.c_lldp_tlv_port_vlan_name_enable) {
+#endif
+            TAILQ_FOREACH(vlan, &port->p_vlans, v_entries) {
+                if (!(
+                      POKE_START_LLDP_TLV(LLDP_TLV_ORG) &&
+                      POKE_BYTES(dot1, sizeof(dot1)) &&
+                      POKE_UINT8(LLDP_TLV_DOT1_VLANNAME) &&
+                      POKE_UINT16(vlan->v_vid) &&
+                      POKE_UINT8(strlen(vlan->v_name)) &&
+                      POKE_BYTES(vlan->v_name, strlen(vlan->v_name)) &&
+                      POKE_END_LLDP_TLV))
+                        goto toobig;
+            }
+#ifdef ENABLE_OVSDB
+        }
+#endif
 	/* Protocol Identities */
-	TAILQ_FOREACH(pi, &port->p_pids, p_entries) {
+#ifdef ENABLE_OVSDB
+        if (global->g_config.c_lldp_tlv_port_proto_id_enable) {
+#endif
+            TAILQ_FOREACH(pi, &port->p_pids, p_entries) {
 		if (!(
 		      POKE_START_LLDP_TLV(LLDP_TLV_ORG) &&
 		      POKE_BYTES(dot1, sizeof(dot1)) &&
@@ -236,7 +283,10 @@ lldp_send(struct lldpd *global,
 		      POKE_BYTES(pi->p_pi, pi->p_pi_len) &&
 		      POKE_END_LLDP_TLV))
 			goto toobig;
-	}
+            }
+#ifdef ENABLE_OVSDB
+        }
+#endif
 #endif
 
 #ifdef ENABLE_DOT3

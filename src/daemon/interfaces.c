@@ -24,6 +24,10 @@
 #include <assert.h>
 #include <arpa/inet.h>
 
+#ifdef ENABLE_OVSDB
+#include "lldpd_ovsdb_if.h"
+#endif
+
 /* Generic ethernet interface initialization */
 /**
  * Enable multicast on the given interface.
@@ -370,14 +374,47 @@ interfaces_helper_mgmt(struct lldpd *cfg,
 	int af;
 	int allnegative = 0;
 
-	lldpd_chassis_mgmt_cleanup(LOCAL_CHASSIS(cfg));
+    const char *pattern = cfg->g_config.c_mgmt_pattern;
 
-	/* Is the pattern provided all negative? */
-	if (cfg->g_config.c_mgmt_pattern == NULL) allnegative = 1;
-	else if (cfg->g_config.c_mgmt_pattern[0] == '!') {
+    lldpd_chassis_mgmt_cleanup(LOCAL_CHASSIS(cfg));
+
+    /* Is the pattern provided an actual IP address? */
+       if (pattern && strpbrk(pattern, "!,*?") == NULL) {
+               struct in6_addr addr;
+               size_t addr_size;
+               for (af = LLDPD_AF_UNSPEC + 1;
+                           af != LLDPD_AF_LAST; af++) {
+                       switch (af) {
+                           case LLDPD_AF_IPV4: addr_size = sizeof(struct in_addr); break;
+                           case LLDPD_AF_IPV6: addr_size = sizeof(struct in6_addr); break;
+                           default: assert(0);
+                           }
+                       if (inet_pton(lldpd_af(af), pattern, &addr) == 1)
+                               break;
+                   }
+               if (af == LLDPD_AF_LAST) {
+                       log_debug("interfaces",
+                                   "interface management pattern is an incorrect IP");
+                   } else {
+                           struct lldpd_mgmt *mgmt;
+                           mgmt = lldpd_alloc_mgmt(af, &addr, addr_size, 0);
+                           if (mgmt == NULL) {
+                                   log_warn("interfaces", "out of memory error");
+                                   return;
+                               }
+                           log_debug("interfaces", "add exact management address %s",
+                                       pattern);
+                           TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(cfg)->c_mgmt, mgmt, m_entries);
+                       }
+               return;
+           }
+
+    /* Is the pattern provided all negative? */
+	if (pattern == NULL) allnegative = 1;
+	else if (pattern[0] == '!') {
 		/* If each comma is followed by '!', its an all
 		   negative pattern */
-		char *sep = cfg->g_config.c_mgmt_pattern;
+		const char *sep = pattern;
 		while ((sep = strchr(sep, ',')) &&
 		       (*(++sep) == '!'));
 		if (sep == NULL) allnegative = 1;
@@ -527,6 +564,14 @@ interfaces_helper_physical(struct lldpd *cfg,
 				    iface->name);
 				continue;
 			}
+#ifdef ENABLE_OVSDB
+			hardware->h_enable_dir = HARDWARE_ENABLE_DIR_DEFAULT; //default
+			/*
+			 * Add lldpd hardware interface to hashmap to map with
+			 * ovsrec and pull any ovsdb cofg if present
+			 */
+			add_lldpd_hardware_interface(hardware);
+#endif
 			if (init(cfg, hardware) != 0) {
 				log_warnx("interfaces",
 				    "unable to initialize %s",

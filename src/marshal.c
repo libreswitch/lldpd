@@ -53,7 +53,11 @@ struct marshal_info marshal_info_fstring = {
 	.size = 0,
 	.pointers = {MARSHAL_SUBINFO_NULL},
 };
+#ifdef ENABLE_OVSDB // Replacing ignore with ignore_ since symbol conflicts with ovs
+struct marshal_info marshal_info_ignore_ = {
+#else
 struct marshal_info marshal_info_ignore = {
+#endif
 	.name = "ignored",
 	.size = 0,
 	.pointers = {MARSHAL_SUBINFO_NULL},
@@ -139,7 +143,11 @@ marshal_serialize_(struct marshal_info *mi, void *unserialized, void **input,
 		size_t padlen;
 		void  *source;
 		void  *target = NULL;
+#ifdef ENABLE_OVSDB
+		if (current->kind == ignore_) continue;
+#else
 		if (current->kind == ignore) continue;
+#endif
 		if (current->kind == pointer) {
 			memcpy(&source,
 			    (unsigned char *)unserialized + current->offset,
@@ -312,7 +320,11 @@ marshal_unserialize_(struct marshal_info *mi, void *buffer, size_t len, void **o
 		size_t  sublen;
 		size_t  padlen;
 		new = (unsigned char *)*output + current->offset;
+#ifdef ENABLE_OVSDB
+		if (current->kind == ignore_) {
+#else
 		if (current->kind == ignore) {
+#endif
 			memset((unsigned char *)*output + current->offset,
 			       0, sizeof(void *));
 			continue;

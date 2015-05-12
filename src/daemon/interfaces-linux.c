@@ -44,7 +44,18 @@ iflinux_eth_init(struct lldpd *cfg, struct lldpd_hardware *hardware)
 		return -1;
 	hardware->h_sendfd = fd; /* Send */
 
+#ifdef ENABLE_OVSDB
+	/*
+	 * Enable multicast only if we need to receive
+	 * Not needed incase of OFF or TX
+	 * */
+	if(hardware->h_enable_dir == HARDWARE_ENABLE_DIR_RX ||
+	        hardware->h_enable_dir == HARDWARE_ENABLE_DIR_RXTX) {
+	    interfaces_setup_multicast(cfg, hardware->h_ifname, 0);
+	}
+#else
 	interfaces_setup_multicast(cfg, hardware->h_ifname, 0);
+#endif
 
 	levent_hardware_add_fd(hardware, fd); /* Receive */
 	log_debug("interfaces", "interface %s initialized (fd=%d)", hardware->h_ifname,

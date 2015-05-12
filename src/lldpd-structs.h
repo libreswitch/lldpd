@@ -42,6 +42,10 @@
 #include "marshal.h"
 #include "lldp-const.h"
 
+#ifdef ENABLE_OVSDB
+#include "openhalon-idl.h"
+#endif
+
 #ifdef ENABLE_DOT1
 struct lldpd_ppvid {
 	TAILQ_ENTRY(lldpd_ppvid) p_entries;
@@ -127,6 +131,17 @@ struct lldpd_dot3_power {
 	u_int16_t		allocated;
 };
 MARSHAL(lldpd_dot3_power);
+#endif
+
+#ifdef ENABLE_OVSDB
+enum {
+	LLDPD_AF_NBR_NOOP = 0,
+	LLDPD_AF_NBR_ADD,
+	LLDPD_AF_NBR_DEL,
+	LLDPD_AF_NBR_MOD,
+	LLDPD_AF_NBR_UPD,
+	LLDPD_AF_NBR_LAST
+};
 #endif
 
 enum {
@@ -338,6 +353,18 @@ struct lldpd_config {
 	int c_bond_slave_src_mac_type; /* Src mac type in lldp frames over bond
 					  slaves */
 	int c_lldp_portid_type; /* The PortID type */
+#ifdef ENABLE_OVSDB
+	int c_is_any_protocol_enabled; /* will be set if atleast one protocol is enabled */
+        u_int8_t c_lldp_tlv_sys_name_enable;      /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_sys_cap_enable;       /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_sys_desc_enable;      /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_mgmt_addr_enable;     /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_port_desc_enable;     /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_port_vlanid_enable;   /* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_port_proto_vlanid_enable;
+        u_int8_t c_lldp_tlv_port_vlan_name_enable;/* Flag to send this tlv or not */
+        u_int8_t c_lldp_tlv_port_proto_id_enable; /* Flag to send this tlv or not */
+#endif
 };
 MARSHAL_BEGIN(lldpd_config)
 MARSHAL_STR(lldpd_config, c_mgmt_pattern)
@@ -364,6 +391,17 @@ struct lldpd_ops {
 		   int, char *, size_t); /* Function to receive a frame */
 	int(*cleanup)(struct lldpd *, struct lldpd_hardware *); /* Cleanup function. */
 };
+
+#ifdef ENABLE_OVSDB
+enum hardware_enable_dir_e {
+    HARDWARE_ENABLE_DIR_OFF,
+    HARDWARE_ENABLE_DIR_RX,
+    HARDWARE_ENABLE_DIR_TX,
+    HARDWARE_ENABLE_DIR_RXTX
+};
+
+#define HARDWARE_ENABLE_DIR_DEFAULT HARDWARE_ENABLE_DIR_RXTX
+#endif
 
 /* An interface is uniquely identified by h_ifindex, h_ifname and h_ops. This
  * means if an interface becomes enslaved, it will be considered as a new
@@ -397,7 +435,6 @@ struct lldpd_hardware {
 	u_int64_t		 h_insert_cnt;
 	u_int64_t		 h_delete_cnt;
 	u_int64_t		 h_drop_cnt;
-
 	void			*h_lport_previous; /* Backup of last value for localport */
 	ssize_t			 h_lport_previous_len;
 	struct lldpd_port	 h_lport;  /* Port attached to this hardware port */
@@ -405,6 +442,11 @@ struct lldpd_hardware {
 
 #ifdef ENABLE_LLDPMED
 	int			h_tx_fast; /* current tx fast start count */
+#endif
+#ifdef ENABLE_OVSDB
+	enum hardware_enable_dir_e h_enable_dir;
+	int h_link_state;
+	int			h_rport_change_opcode; /* port change opcode */
 #endif
 };
 MARSHAL_BEGIN(lldpd_hardware)

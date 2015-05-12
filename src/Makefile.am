@@ -1,5 +1,9 @@
 AM_CFLAGS = -I $(top_srcdir)/include
 
+if OVSDB_INTEGRATION
+AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
+endif
+
 noinst_LTLIBRARIES = libcommon-daemon-lib.la libcommon-daemon-client.la
 include_HEADERS    = lldp-const.h
 

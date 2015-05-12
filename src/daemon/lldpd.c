@@ -38,6 +38,10 @@
 #include <netinet/if_ether.h>
 #include <pwd.h>
 #include <grp.h>
+#ifdef ENABLE_OVSDB
+#include "lldpd_ovsdb_if.h"
+#include "vswitch-idl.h"
+#endif
 
 static void		 usage(void);
 
@@ -212,6 +216,9 @@ lldpd_hardware_cleanup(struct lldpd *cfg, struct lldpd_hardware *hardware)
 	if (hardware->h_ops && hardware->h_ops->cleanup)
 		hardware->h_ops->cleanup(cfg, hardware);
 	levent_hardware_release(hardware);
+#ifdef ENABLE_OVSDB
+	del_lldpd_hardware_interface(hardware);
+#endif
 	free(hardware);
 }
 
@@ -350,8 +357,9 @@ lldpd_cleanup(struct lldpd *cfg)
 			TAILQ_REMOVE(&cfg->g_hardware, hardware, h_entries);
 			lldpd_remote_cleanup(hardware, notify_clients_deletion, 1);
 			lldpd_hardware_cleanup(cfg, hardware);
-		} else
+		} else {
 			lldpd_remote_cleanup(hardware, notify_clients_deletion, 0);
+		}
 	}
 
 	log_debug("localchassis", "cleanup all chassis");
@@ -443,6 +451,9 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 	struct lldpd_chassis *chassis, *ochassis = NULL;
 	struct lldpd_port *port, *oport = NULL, *aport;
 	int guess = LLDPD_MODE_LLDP;
+#ifdef ENABLE_OVSDB
+	int cur_opcode;
+#endif
 
 	log_debug("decode", "decode a received frame on %s",
 	    hardware->h_ifname);
@@ -450,6 +461,11 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 	if (s < sizeof(struct ether_header) + 4)
 		/* Too short, just discard it */
 		return;
+
+#ifdef ENABLE_OVSDB
+        cur_opcode = hardware->h_rport_change_opcode;
+        hardware->h_rport_change_opcode = LLDPD_AF_NBR_NOOP;
+#endif
 
 	/* Decapsulate VLAN frames */
 	struct ether_header eheader;
@@ -468,6 +484,15 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 			/* Already received the same frame */
 			log_debug("decode", "duplicate frame, no need to decode");
 			oport->p_lastupdate = time(NULL);
+#ifdef ENABLE_OVSDB
+                        /* Make sure we don't lose an ADD/MOD request */
+                        if ((cur_opcode == LLDPD_AF_NBR_MOD) || (cur_opcode == LLDPD_AF_NBR_ADD)) {
+        			hardware->h_rport_change_opcode = cur_opcode;
+                        } else {
+        		        hardware->h_rport_change_opcode = LLDPD_AF_NBR_UPD;
+                        }
+        		ovs_libevent_schedule_nbr(cfg);
+#endif
 			return;
 		}
 	}
@@ -555,6 +580,9 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 		/* The port is known, remove it before adding it back */
 		TAILQ_REMOVE(&hardware->h_rports, oport, p_entries);
 		lldpd_port_cleanup(oport, 1);
+#ifdef ENABLE_OVSDB
+       		hardware->h_rport_change_opcode = LLDPD_AF_NBR_MOD;
+#endif
 		free(oport);
 	}
 	if (ochassis) {
@@ -576,6 +604,8 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 		port->p_lastframe->size = s;
 		memcpy(port->p_lastframe->frame, frame, s);
 	}
+
+
 	TAILQ_INSERT_TAIL(&hardware->h_rports, port, p_entries);
 	port->p_chassis = chassis;
 	port->p_chassis->c_refcount++;
@@ -636,6 +666,13 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 
 		levent_schedule_pdu(hardware);
 	}
+#endif
+
+#ifdef ENABLE_OVSDB
+        if (hardware->h_rport_change_opcode == LLDPD_AF_NBR_NOOP) {
+        	hardware->h_rport_change_opcode = LLDPD_AF_NBR_ADD;
+	}
+        ovs_libevent_schedule_nbr(cfg);
 #endif
 
 	return;
@@ -874,6 +911,7 @@ lldpd_recv(struct lldpd *cfg, struct lldpd_hardware *hardware, int fd)
 {
 	char *buffer = NULL;
 	int n;
+
 	log_debug("receive", "receive a frame on %s",
 	    hardware->h_ifname);
 	if ((buffer = (char *)malloc(hardware->h_mtu)) == NULL) {
@@ -894,6 +932,35 @@ lldpd_recv(struct lldpd *cfg, struct lldpd_hardware *hardware, int fd)
 		free(buffer);
 		return;
 	}
+
+#ifdef ENABLE_OVSDB
+	if(!cfg->g_config.c_is_any_protocol_enabled) {
+		log_debug("receive", "no protocol enabled, ignore the frame on %s",
+			hardware->h_ifname);
+		free(buffer);
+		return;
+	}
+
+	/*
+	 * Return if we do not need to rx
+	 * i.e interface mode is OFF or TX
+	 * */
+	if(hardware->h_enable_dir == HARDWARE_ENABLE_DIR_OFF ||
+	    hardware->h_enable_dir == HARDWARE_ENABLE_DIR_TX) {
+		log_debug("receive", "lldp rx turned off on interface, ignore frame on %s",
+		    hardware->h_ifname);
+		free(buffer);
+		return;
+	}
+	/*
+	 * Return if link state is down.
+	 * */
+	if(hardware->h_link_state == INTERFACE_LINK_STATE_DOWN) {
+		log_debug("receive", "link state is down for interface, ignore frame on %s",
+		    hardware->h_ifname);
+		return;
+	}
+#endif
 	hardware->h_rx_cnt++;
 	log_debug("receive", "decode received frame on %s",
 	    hardware->h_ifname);
@@ -912,6 +979,13 @@ lldpd_send(struct lldpd_hardware *hardware)
 	int i, sent;
 
 	if (cfg->g_config.c_receiveonly || cfg->g_config.c_paused) return;
+#ifdef ENABLE_OVSDB
+    if(hardware->h_enable_dir == HARDWARE_ENABLE_DIR_OFF ||
+            hardware->h_enable_dir == HARDWARE_ENABLE_DIR_RX ||
+            hardware->h_link_state == INTERFACE_LINK_STATE_DOWN) {
+        return;
+    }
+#endif
 	if ((hardware->h_flags & IFF_RUNNING) == 0)
 		return;
 
@@ -961,7 +1035,11 @@ lldpd_send(struct lldpd_hardware *hardware)
 			break;
 		}
 		if (cfg->g_protocols[i].mode == 0)
+#ifdef ENABLE_OVSDB
+			log_debug("send", "no protocol enabled, dunno what to send");
+#else
 			log_warnx("send", "no protocol enabled, dunno what to send");
+#endif
 	}
 }
 
@@ -1128,6 +1206,9 @@ lldpd_exit(struct lldpd *cfg)
 		lldpd_remote_cleanup(hardware, NULL, 1);
 		lldpd_hardware_cleanup(cfg, hardware);
 	}
+#ifdef ENABLE_OVSDB
+	lldpd_ovsdb_exit();
+#endif
 }
 
 /**
@@ -1213,7 +1294,7 @@ static const struct intint filters[] = {
 	{ -1, 0 }
 };
 
-#ifndef HOST_OS_OSX
+#if !defined(ENABLE_OVSDB) && !defined(HOST_OS_OSX)
 /**
  * Tell if we have been started by upstart.
  */
@@ -1314,11 +1395,18 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	int receiveonly = 0;
 	int ctl;
 
+#ifdef ENABLE_PRIVSEP
 	/* Non privileged user */
 	struct passwd *user;
 	struct group *group;
+#endif
 	uid_t uid;
 	gid_t gid;
+
+
+#ifdef ENABLE_OVSDB
+	lldpd_ovsdb_init(argc, argv);
+#endif
 
 	saved_argv = argv;
 
@@ -1472,13 +1560,14 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	log_debug("main", "lldpd starting...");
 
 	/* Grab uid and gid to use for priv sep */
+#ifdef ENABLE_PRIVSEP
 	if ((user = getpwnam(PRIVSEP_USER)) == NULL)
 		fatal("main", "no " PRIVSEP_USER " user for privilege separation");
 	uid = user->pw_uid;
 	if ((group = getgrnam(PRIVSEP_GROUP)) == NULL)
 		fatal("main", "no " PRIVSEP_GROUP " group for privilege separation");
 	gid = group->gr_gid;
-
+#endif
 	/* Create and setup socket */
 	int retry = 1;
 	log_debug("main", "creating control socket");
@@ -1525,8 +1614,8 @@ lldpd_main(int argc, char *argv[], char *envp[])
 			fatal("main", "unable to spawn lldpcli");
 	}
 
+#if !defined(ENABLE_OVSDB) && !defined(HOST_OS_X)
 	/* Daemonization, unless started by upstart, systemd or launchd or debug */
-#ifndef HOST_OS_OSX
 	if (!lldpd_started_by_upstart() && !lldpd_started_by_systemd() &&
 	    !debug) {
 		int pid;
@@ -1545,7 +1634,6 @@ lldpd_main(int argc, char *argv[], char *envp[])
 		close(pid);
 	}
 #endif
-
 	/* Try to read system information from /etc/os-release if possible.
 	   Fall back to lsb_release for compatibility. */
 	log_debug("main", "get OS/LSB release information");
@@ -1561,6 +1649,11 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	if ((cfg = (struct lldpd *)
 	    calloc(1, sizeof(struct lldpd))) == NULL)
 		fatal("main", NULL);
+
+#ifdef ENABLE_OVSDB
+	/* OVSDB specific initializations here */
+	cfg->g_config.c_is_any_protocol_enabled = 0;
+#endif
 
 	cfg->g_ctlname = ctlname;
 	cfg->g_ctl = ctl;
@@ -1651,11 +1744,20 @@ lldpd_main(int argc, char *argv[], char *envp[])
 		if (protos[i].mode == LLDPD_MODE_CDPV2 && protos[i].enabled == 4) {
 			protos[i].enabled = 1;
 		}
-
+#ifdef ENABLE_OVSDB
+		if (protos[i].enabled > 1) {
+			cfg->g_config.c_is_any_protocol_enabled = 1;
+			log_info("main", "protocol %s enabled and forced", protos[i].name);
+		} else if (protos[i].enabled) {
+			cfg->g_config.c_is_any_protocol_enabled = 1;
+			log_info("main", "protocol %s enabled", protos[i].name);
+		}
+#else
 		if (protos[i].enabled > 1)
 			log_info("main", "protocol %s enabled and forced", protos[i].name);
 		else if (protos[i].enabled)
 			log_info("main", "protocol %s enabled", protos[i].name);
+#endif
 		else
 			log_info("main", "protocol %s disabled", protos[i].name);
 	    }

@@ -248,6 +248,19 @@ lldp_ARG_ENABLE([privsep], [Privilege separation], [yes])
 lldp_ARG_WITH([privsep-user], [Which user to use for privilege separation], [_lldpd])
 lldp_ARG_WITH([privsep-group], [Which group to use for privilege separation], [_lldpd])
 
+#Ovsdb integration
+lldp_ARG_ENABLE([ovsdb], [Ovsdb integration], [no])
+AM_CONDITIONAL(OVSDB_INTEGRATION, test "$enable_ovsdb" = yes)
+if test "$enable_ovsdb" = yes ; then
+ # If not forced, check first with pkg-config
+    PKG_CHECK_MODULES([OVSDB], [libovscommon], [
+       CFLAGS="$CFLAGS $OVSDB_CFLAGS"
+       LIBS="$LIBS $OVSDB_LIBS"
+    ], [
+      AC_MSG_ERROR([unable to find libovsdb])
+    ])
+fi
+
 # Directories
 dnl On autoconf 2.69 and before, runstatedir is not configurable, let be able to use it anyway
 if test "x$runstatedir" = x; then
@@ -315,6 +328,7 @@ cat <<EOF
   Enabled........: $enable_privsep
   User/group.....: ${with_privsep_user}/${with_privsep_group}
   Chroot.........: ${with_privsep_chroot}
+ Ovsdb integration ${enable_ovsdb}
 ---------------------------------------------
 
 Check the above options and compile with:

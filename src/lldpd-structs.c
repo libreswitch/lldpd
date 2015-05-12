@@ -21,6 +21,12 @@
 #include "lldpd-structs.h"
 #include "log.h"
 
+#ifdef ENABLE_OVSDB
+#include "daemon/lldpd_ovsdb_if.h"
+#include "vswitch-idl.h"
+#endif
+
+
 void
 lldpd_chassis_mgmt_cleanup(struct lldpd_chassis *chassis)
 {
@@ -135,6 +141,10 @@ lldpd_remote_cleanup(struct lldpd_hardware *hardware,
 			 * called while in liblldpctl because we don't have a
 			 * real list. It is only needed to be called when we
 			 * don't delete the entire list. */
+#ifdef ENABLE_OVSDB
+			hardware->h_rport_change_opcode = LLDPD_AF_NBR_DEL;
+#endif
+
 			if (!all) TAILQ_REMOVE(&hardware->h_rports, port, p_entries);
 			lldpd_port_cleanup(port, 1);
 			free(port);

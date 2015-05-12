@@ -1,5 +1,9 @@
 AM_CFLAGS = -I $(top_srcdir)/include
 
+if OVSDB_INTEGRATION
+AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
+endif
+
 lib_LTLIBRARIES = liblldpctl.la
 include_HEADERS = lldpctl.h
 

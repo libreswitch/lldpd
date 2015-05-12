@@ -4,7 +4,7 @@ ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS      = src/compat src src/daemon src/lib src/client tests osx
 EXTRA_DIST   = $(DX_CONFIG) include get-version autogen.sh
-DIST_SUBDIRS = $(SUBDIRS) libevent
+DIST_SUBDIRS = $(SUBDIRS)
 DISTCLEANFILES = ChangeLog
 
 dist_doc_DATA = README.md NEWS CONTRIBUTE.md

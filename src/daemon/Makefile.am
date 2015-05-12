@@ -1,4 +1,9 @@
 AM_CFLAGS = -I $(top_srcdir)/include
+
+if OVSDB_INTEGRATION
+AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
+endif
+
 BUILT_SOURCES =
 CLEANFILES =
 
@@ -21,11 +26,23 @@ liblldpd_la_SOURCES  = \
 	event.c lldpd.c \
 	pattern.c \
 	probes.d trace.h
+
+if OVSDB_INTEGRATION
+liblldpd_la_SOURCES  += \
+	lldpd_ovsdb_if.c lldpd_ovsdb_if.h
+endif
+
 liblldpd_la_CFLAGS   = $(AM_CFLAGS) @LIBEVENT_CFLAGS@
 liblldpd_la_CPPFLAGS = -DSYSCONFDIR='"$(sysconfdir)"' -DLLDPCLI_PATH='"$(sbindir)/lldpcli"'
 liblldpd_la_LIBADD   = \
 	$(top_builddir)/src/libcommon-daemon-client.la \
 	$(top_builddir)/src/libcommon-daemon-lib.la @LIBEVENT_LIBS@
+
+if OVSDB_INTEGRATION
+liblldpd_la_LIBADD += \
+        -lovscommon \
+        -lovsdb
+endif
 
 if HOST_OS_LINUX
 liblldpd_la_SOURCES += \

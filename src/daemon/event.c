@@ -27,6 +27,12 @@
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
 
+#ifdef ENABLE_OVSDB
+#include "lldpd_ovsdb_if.h"
+#include "stdbool.h"
+extern bool exiting;
+#endif
+
 #define EVENT_BUFFER 1024
 
 static void
@@ -482,6 +488,9 @@ levent_init(struct lldpd *cfg)
 	evsignal_add(evsignal_new(cfg->g_base, SIGTERM,
 		levent_stop, cfg->g_base),
 	    NULL);
+#ifdef ENABLE_OVSDB
+	init_ovspoll_to_libevent(cfg);
+#endif
 }
 
 /* Initialize libevent and start the event loop */
@@ -500,7 +509,11 @@ levent_loop(struct lldpd *cfg)
 		if (event_base_got_break(cfg->g_base) ||
 		    event_base_got_exit(cfg->g_base))
 			break;
+#ifdef ENABLE_OVSDB
+	} while (event_base_loop(cfg->g_base, EVLOOP_ONCE) == 0 && !exiting);
+#else
 	} while (event_base_loop(cfg->g_base, EVLOOP_ONCE) == 0);
+#endif
 
 #ifdef USE_SNMP
 	if (cfg->g_snmp)

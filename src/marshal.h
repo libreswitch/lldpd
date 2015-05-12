@@ -18,6 +18,10 @@
 #ifndef _MARSHAL_H
 #define _MARSHAL_H
 
+#if HAVE_CONFIG_H
+#  include <config.h>
+#endif
+
 #include <stddef.h>
 #include <sys/types.h>
 
@@ -25,7 +29,11 @@ struct marshal_info;
 enum marshal_subinfo_kind {
 	pointer,
 	substruct,
+#ifdef ENABLE_OVSDB
+	ignore_,
+#else
 	ignore,
+#endif
 };
 #define MARSHAL_INFO_POINTER 1
 #define MARSHAL_INFO_SUB     2
@@ -35,7 +43,12 @@ struct marshal_subinfo {
 	enum marshal_subinfo_kind kind; /* Kind of substructure */
 	struct  marshal_info *mi;
 };
+#ifdef ENABLE_OVSDB
+#define MARSHAL_SUBINFO_NULL { .offset = 0, .offset2 = 0, .kind = ignore_, .mi = NULL }
+#else
 #define MARSHAL_SUBINFO_NULL { .offset = 0, .offset2 = 0, .kind = ignore, .mi = NULL }
+#endif
+
 struct marshal_info {
 	char   *name;		/* Name of structure */
 	size_t  size;		/* Size of the structure */
@@ -51,7 +64,11 @@ struct marshal_info {
 /* Special case for strings */
 extern struct marshal_info marshal_info_string;
 extern struct marshal_info marshal_info_fstring;
+#ifdef ENABLE_OVSDB
+extern struct marshal_info marshal_info_ignore_;
+#else
 extern struct marshal_info marshal_info_ignore;
+#endif
 
 /* Declare a new marshal_info struct named after the type we want to
    marshal. The marshalled type has to be a structure. */
@@ -104,7 +121,11 @@ extern struct marshal_info marshal_info_ignore;
 #define MARSHAL_POINTER(...) MARSHAL_ADD(pointer, ##__VA_ARGS__)
 #define MARSHAL_SUBSTRUCT(...) MARSHAL_ADD(substruct, ##__VA_ARGS__)
 #define MARSHAL_STR(type, member) MARSHAL_ADD(pointer, type, string, member)
+#ifdef ENABLE_OVSDB
+#define MARSHAL_IGNORE(type, member) MARSHAL_ADD(ignore_, type, ignore_, member)
+#else
 #define MARSHAL_IGNORE(type, member) MARSHAL_ADD(ignore, type, ignore, member)
+#endif
 #define MARSHAL_TQE(type, field)			 \
 	MARSHAL_POINTER(type, type, field.tqe_next)	 \
 	MARSHAL_IGNORE(type, field.tqe_prev)
