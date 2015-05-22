@@ -1180,7 +1180,14 @@ lldpd_loop(struct lldpd *cfg)
 	   2. Update local chassis information
 	*/
 	log_debug("loop", "start new loop");
+
+#ifndef ENABLE_OVSDB
+	/*
+	 * If ovsdb is enabled capability info will come from ovsdb
+	 * and we will not pick from interface
+	 */
 	LOCAL_CHASSIS(cfg)->c_cap_enabled = 0;
+#endif
 	/* Information for local ports is triggered even when it is possible to
 	 * update them on some other event because we want to refresh them if we
 	 * missed something. */
@@ -1651,8 +1658,9 @@ lldpd_main(int argc, char *argv[], char *envp[])
 		fatal("main", NULL);
 
 #ifdef ENABLE_OVSDB
-	/* OVSDB specific initializations here */
+	/* OVSDB specific initializations/defaults here */
 	cfg->g_config.c_is_any_protocol_enabled = 0;
+	cfg->g_config.c_lldp_portid_type = LLDP_PORTID_SUBTYPE_IFNAME;
 #endif
 
 	cfg->g_ctlname = ctlname;
@@ -1700,8 +1708,12 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	if ((lchassis = (struct lldpd_chassis*)
 		calloc(1, sizeof(struct lldpd_chassis))) == NULL)
 		fatal("localchassis", NULL);
+#ifdef HALON
+	lchassis->c_cap_available = LLDP_CAP_BRIDGE | LLDP_CAP_ROUTER;
+#else
 	lchassis->c_cap_available = LLDP_CAP_BRIDGE | LLDP_CAP_WLAN |
 	    LLDP_CAP_ROUTER | LLDP_CAP_STATION;
+#endif
 	TAILQ_INIT(&lchassis->c_mgmt);
 #ifdef ENABLE_LLDPMED
 	if (lldpmed > 0) {

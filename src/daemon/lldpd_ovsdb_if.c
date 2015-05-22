@@ -58,11 +58,22 @@
 #include "vswitch-idl.h"
 #include "coverage.h"
 #include "lldpd.h"
+#include "../lldp-const.h"
 #include "openhalon-idl.h"
 #include "lldpd_ovsdb_if.h"
+#include "vlan-bitmap.h"
 
 COVERAGE_DEFINE(lldpd_ovsdb_if);
 VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
+
+#define KEY_VAL_STR_BUF_MAX 4096
+#define KEY_VAL_STR_BUF_MAX 4096
+#define MAX_DESCR 256
+#define KEY_VAL_MAX 64
+#define STR_BUF_DECODE_MAX 1024
+#define DECODE_TABLE_MAX 1024
+#define VLAN_LIST_STR_MAX (4096 * 256)
+#define VLAN_LIST_INT_MAX (4096 * 16)
 
 static struct ovsdb_idl *idl;
 static unsigned int idl_seqno;
@@ -83,68 +94,366 @@ static unixctl_cb_func lldpd_unixctl_dump;
 static unixctl_cb_func halon_lldpd_exit;
 bool exiting = false;
 
+static char * vlan_name_lookup_by_vid(int64_t vid);
+
+/**************************************************************************//**
+ * interface_date struct that contains interface table information for an interface.
+ *****************************************************************************/
+struct interface_data {
+    char     *name;               /* Always nonnull. */
+    int native_vid;               /* "tag" column - native VLAN ID. */
+    int synced_from_db;
+    const struct ovsrec_interface *ifrow; /* handle to ovsrec row */
+    struct port_data *portdata; /* handle to port data */
+    struct lldpd_hardware *hw; /* handle to lldp harware interface */
+};
+
+/**************************************************************************//**
+ * port_data struct that contains PORT table information for a single port.
+ *****************************************************************************/
+struct port_data {
+    char *name;
+    enum ovsrec_port_vlan_mode_e vlan_mode;  /* "vlan_mode" column. */
+    int native_vid;               /* "tag" column - native VLAN ID. */
+    bool trunk_all_vlans;         /* Indicates whether this port is
+                                       implicitly trunking all VLANs
+                                       defined in VLAN table. */
+    struct lldpd_hardware **interfaces; /* handle to the hw interface */
+    int n_interfaces;             /* Number of interfaces on this port */
+    const struct ovsrec_port *portrow; /* handle to ovsrec tow */
+};
+
 /* Mapping of all the interfaces. */
 static struct shash all_interfaces = SHASH_INITIALIZER(&all_interfaces);
 
-static void
-ovs_clear_libevents()
+/* Mapping of all the ports. */
+static struct shash all_ports = SHASH_INITIALIZER(&all_ports);
+
+char *lldp_ovsdb_map[lldp_tlv_map_last];
+char *lldp_decode_table[DECODE_TABLE_MAX];
+uint32_t lldp_decode_start[LLDP_INDEX_MAX+1];
+
+#define lldp_decode_setup(lldp_type, lldp_type_name, base) \
+    lldp_decode_table[ base + lldp_type ] = xstrdup(#lldp_type_name);
+
+#define lldp_to_tlv_set(a, b) \
+    lldp_ovsdb_map[ a ] = xstrdup(#b);
+
+#define lldp_to_tlv_get(func, field) lldp_ovsdb_map[ func ## _ ## field ]
+
+/**********************************************************************/
+/*                   LLDP Neighbor decode Functions                   */
+/**********************************************************************/
+inline int bit_set(uint32_t n)
 {
-    struct poll_loop *loop = poll_loop();
-    struct poll_node *node;
+    uint32_t l=0;
 
-    /* Clear and free all the fd events. */
-    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
-        if(node->event) {
-            event_del((struct event*) node->event);
-            event_free((struct event*) node->event);
-            node->event = NULL;
-        }
-    }
-
-    /* Clear and free timeout event */
-    if(timeout_event) {
-        event_del(timeout_event);
-        event_free(timeout_event);
-        timeout_event = NULL;
-    }
-
-    free_poll_nodes(loop);
-    loop->timeout_when = LLONG_MAX;
-    loop->timeout_where = NULL;
-}
-
-static void ovs_libevent_cb(evutil_socket_t fd, short what, void *arg){
-    struct lldpd *cfg = arg;
-    int retval = 0;
-    struct timeval tv;
-
-    ovs_clear_libevents();
-
-    lldpd_run(cfg);
-    lldpd_wait();
-
-    retval = ovspoll_to_libevent(cfg);
-    if(retval == -1) // Nothing was scheduled, due to connection error, lets schedule cb after 1 sec
+    while (n >>= 1)
     {
-        tv.tv_sec =  1;
-        tv.tv_usec = 0;
-        timeout_event = event_new(cfg->g_base, -1, 0,
-            ovs_libevent_cb,
-                cfg);
-        event_add(timeout_event, &tv);
+        l++;
     }
-    return;
+    return l;
 }
 
-void ovs_libevent_schedule_nbr(void *arg){
-    struct lldpd *cfg = arg;
+void decode_features(char *decode_str, uint32_t features, uint32_t category)
+{
+    int i, n, base, limit;
 
-    nbr_event = event_new(cfg->g_base, -1, 0, ovs_libevent_cb, cfg);
-    event_active(timeout_event, EV_TIMEOUT, 1);
+    base = lldp_decode_start[category];
+    limit = lldp_decode_start[category+1] - lldp_decode_start[category];
 
-    return;
+    for (n=0, i=0; i < limit; i++) {
+        if (features & (1 << i)) {
+            if (n == 0) {
+                n = sprintf(decode_str, "%s", lldp_decode_table[base + i]);
+            } else {
+                n += sprintf(&decode_str[n], ", %s",
+                             lldp_decode_table[base + i]);
+            }
+         }
+    }
+
 }
 
+void decode_property(char *decode_str, uint32_t property, uint32_t category)
+{
+    int base = lldp_decode_start[category];
+    int limit = lldp_decode_start[category+1] - lldp_decode_start[category];
+
+    if (property >= limit) {
+        return;
+    }
+
+    sprintf(decode_str, "%s",  lldp_decode_table[base+property]);
+}
+
+void decode_nw_addr(char *decode_str, char *user_str, int key_len)
+{
+    int i, n, size;
+    char c;
+
+    n=0;
+    size = strlen(user_str);
+    for (i=0; i < key_len; i++) {
+        c = i < size ? user_str[i] : 0;
+        if (i < key_len -1)
+            n += sprintf(&decode_str[n], "%02x:", c);
+        else
+            sprintf(&decode_str[n], "%02x", c);
+    }
+}
+
+static void
+lldp_ovsdb_setup_decode()
+{
+    int index = 0;
+
+/* Chassis ID subtype */
+    lldp_decode_start[LLDP_CHASSISID_SUBTYPE_INDEX] = index;
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_CHASSIS, chassis, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_IFALIAS, if_alias, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_PORT,    port, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_LLADDR,  link_local_addr, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_ADDR,    addr, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_IFNAME,  if_name, index)
+    lldp_decode_setup( LLDP_CHASSISID_SUBTYPE_LOCAL,   local, index)
+    index += LLDP_CHASSISID_SUBTYPE_LOCAL + 1;
+
+/* Port ID subtype */
+    lldp_decode_start[LLDP_PORTID_SUBTYPE_INDEX] = index;
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_UNKNOWN, unknown, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_IFALIAS, if_alias, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_PORT,   port, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_LLADDR,  link_local_addr, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_ADDR,   addr, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_IFNAME,  if_name, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_AGENTCID,agent_cid, index)
+    lldp_decode_setup( LLDP_PORTID_SUBTYPE_LOCAL,   if_name, index)
+    index += LLDP_PORTID_SUBTYPE_LOCAL + 1;
+
+/* Operational MAU Type field, from RFC 3636 */
+    lldp_decode_start[LLDP_DOT3_MAU_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_MAU_AUI,          AUI, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASE5,      10BASE5, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASET,      10BASE5, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASEFP,     10BASEFP, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASEFB,     10BASEFB, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASEFL,     10BASEFL, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BROAD36,    10BROAD36, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASETHD,    10BASETHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASETFD,    10BASETFD , index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASEFLHD,   10BASEFLHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASEFLFD,   10BASEFLFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10BASET4,     10BASET4, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASETXHD,  100BASETXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASETXFD,  100BASETXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASEFXHD,  100BASEFXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASEFXFD,  100BASEFXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASET2HD,  100BASET2HD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_100BASET2FD,  100BASET2FD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASEXHD,  1000BASEXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASEXFD,  1000BASEXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASELXHD, 1000BASELXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASELXFD, 1000BASELXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASESXHD, 1000BASESXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASESXFD, 1000BASESXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASECXHD, 1000BASECXHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASECXFD, 1000BASECXFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASETHD,  1000BASETHD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_1000BASETFD,  1000BASETFD, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASEX,   10GIGBASEX, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASELX4, 10GIGBASELX4, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASER,   10GIGBASEER, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASEER,  10GIGBASEER, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASELR,  10GIGBASELR, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASESR,  10GIGBASESR, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASEW,   10GIGBASEW, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASEEW,  10GIGBASEEW, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASELW,  10GIGBASELW, index)
+    lldp_decode_setup( LLDP_DOT3_MAU_10GIGBASESW,  10GIGBASESW, index)
+    index += LLDP_DOT3_MAU_10GIGBASESW + 1;
+
+    lldp_decode_start[LLDP_DOT3_POWER_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_POWER_PSE, PSE, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_PD,  PD,  index)
+    index += LLDP_DOT3_POWER_PD + 1;
+
+/* Dot3 Power Pairs (RFC 3621) */
+    lldp_decode_start[LLDP_DOT3_POWERPAIRS_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_POWERPAIRS_SIGNAL, SIGNAL, index)
+    lldp_decode_setup( LLDP_DOT3_POWERPAIRS_SPARE,  SPATRE, index)
+    index += LLDP_DOT3_POWERPAIRS_SPARE + 1;
+
+/* Dot3 Power type (for 802.3at) */
+    lldp_decode_start[LLDP_DOT3_POWER_8023AT_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_POWER_8023AT_OFF,   OFF,   index)
+    lldp_decode_setup( LLDP_DOT3_POWER_8023AT_TYPE1, TYPE1, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_8023AT_TYPE2, TYPE2, index)
+    index += LLDP_DOT3_POWER_8023AT_TYPE2 + 1;
+
+/* Dot3 power source */
+    lldp_decode_start[LLDP_DOT3_POWER_SOURCE_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_POWER_SOURCE_UNKNOWN, Unkown, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_SOURCE_PRIMARY, Primary, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_SOURCE_BACKUP,  Backup, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_SOURCE_BOTH,    Both, index)
+    index += LLDP_DOT3_POWER_SOURCE_BOTH + 1;
+
+/* Dot3 power priority */
+    lldp_decode_start[LLDP_DOT3_POWER_PRIO_INDEX] = index;
+    lldp_decode_setup( LLDP_DOT3_POWER_PRIO_UNKNOWN, Unkown, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_PRIO_CRITICAL, Critical, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_PRIO_HIGH,     High, index)
+    lldp_decode_setup( LLDP_DOT3_POWER_PRIO_LOW,      Low, index)
+    index += LLDP_DOT3_POWER_PRIO_LOW + 1;
+
+/* PMD Auto-Negotiation Advertised Capability field, from RFC 3636 */
+    lldp_decode_start[LLDP_DOT3_LINK_AUTONEG_INDEX] = index;
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_OTHER), Other, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_10BASE_T), 10BASE_T, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_10BASET_FD), 10BASET_FD, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_100BASE_T4), 100BASE_T4, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_100BASE_TX), 100BASE_TX, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_100BASE_TXFD), 100BASE_TXFD, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_100BASE_T2), 100BASE_T2, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_100BASE_T2FD), 100BASE_T2FD, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_FDX_PAUSE), FDX_PAUSE, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_FDX_APAUSE), FDX_APAUSE, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_FDX_SPAUSE), FDX_SPAUSE, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_FDX_BPAUSE), FDX_BPAUSE, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_1000BASE_X), 1000BASE_X, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_1000BASE_XFD), 1000BASE_XFD, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_1000BASE_T), 1000BASE_T, index)
+    lldp_decode_setup( bit_set(LLDP_DOT3_LINK_AUTONEG_1000BASE_TFD), 1000BASE_TFD, index)
+    index += bit_set(LLDP_DOT3_LINK_AUTONEG_OTHER) + 1;
+
+/* Capabilities */
+    lldp_decode_start[LLDP_CAP_INDEX] = index;
+    lldp_decode_setup( bit_set(LLDP_CAP_OTHER),     Other, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_REPEATER),  Repeater, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_BRIDGE),    Bridge, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_WLAN),      WLAN, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_ROUTER),    Router, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_TELEPHONE), Telephone, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_DOCSIS),    DOCSIS, index)
+    lldp_decode_setup( bit_set(LLDP_CAP_STATION),   Station, index)
+    index += bit_set(LLDP_CAP_STATION) + 1;
+
+    lldp_decode_start[LLDP_PPVID_CAP_INDEX] = index;
+    lldp_decode_setup( LLDP_PPVID_CAP_SUPPORTED, SUPPORTED, index)
+    lldp_decode_setup( LLDP_PPVID_CAP_ENABLED, ENABLED, index)
+    index += bit_set(LLDP_PPVID_CAP_ENABLED) + 1;
+
+/* see http://www.iana.org/assignments/address-family-numbers */
+    lldp_decode_start[LLDP_MGMT_ADDR_INDEX] = index;
+    lldp_decode_setup( LLDP_MGMT_ADDR_NONE, None, index)
+    lldp_decode_setup( LLDP_MGMT_ADDR_IP4,  IPv4, index)
+    lldp_decode_setup( LLDP_MGMT_ADDR_IP6,  IPv6, index)
+    index += LLDP_MGMT_ADDR_IP6 + 1;
+
+    lldp_decode_start[LLDP_MGMT_IFACE_INDEX] = index;
+    lldp_decode_setup( LLDP_MGMT_IFACE_UNKNOWN, Unknown, index)
+    lldp_decode_setup( LLDP_MGMT_IFACE_IFINDEX, IF_INDEX, index)
+    lldp_decode_setup( LLDP_MGMT_IFACE_SYSPORT, Sysroot,  index)
+    index += LLDP_MGMT_IFACE_SYSPORT + 1;
+
+    lldp_decode_start[LLDP_MED_CLASS_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_CLASS_I,   CLASS_I, index)
+    lldp_decode_setup( LLDP_MED_CLASS_II,  CLASS_II, index)
+    lldp_decode_setup( LLDP_MED_CLASS_III, CLASS_III, index)
+    lldp_decode_setup( LLDP_MED_NETWORK_DEVICE, Network_Device, index)
+    index += LLDP_MED_NETWORK_DEVICE + 1;
+
+/* LLDP MED application ttpes */
+    lldp_decode_start[LLDP_MED_APPTYPE_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_APPTYPE_UNDEFINED, Undefined, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_VOICE, VOICE, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_VOICESIGNAL, VOICESIGNAL, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_GUESTVOICE, GUESTVOICE, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_GUESTVOICESIGNAL, GUESTVOICESIGNAL, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_SOFTPHONEVOICE, SOFTPHONEVOICE, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_VIDEOCONFERENCE, VIDEOCONFERENCE, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_VIDEOSTREAM, VIDEOSTREAM, index)
+    lldp_decode_setup( LLDP_MED_APPTYPE_VIDEOSIGNAL, VIDEOSIGNAL, index)
+    index += LLDP_MED_APPTYPE_LAST + 1;
+
+/* LLDP MED location formats */
+    lldp_decode_start[LLDP_MED_LOCFORMAT_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_LOCFORMAT_COORD, COORD, index)
+    lldp_decode_setup( LLDP_MED_LOCFORMAT_CIVIC, CIVIC, index)
+    lldp_decode_setup( LLDP_MED_LOCFORMAT_ELIN, ELIN, index)
+    index += LLDP_MED_LOCFORMAT_LAST + 1;
+
+    lldp_decode_start[LLDP_MED_LOCATION_GEOID_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_LOCATION_GEOID_WGS84, WGS84, index)
+    lldp_decode_setup( LLDP_MED_LOCATION_GEOID_NAD83, NAD83, index)
+    lldp_decode_setup( LLDP_MED_LOCATION_GEOID_NAD83_MLLW, NAD83_MLLW, index)
+    index += LLDP_MED_LOCATION_GEOID_NAD83_MLLW + 1;
+
+    lldp_decode_start[LLDP_MED_LOCATION_ALTITUDE_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_LOCATION_ALTITUDE_UNIT_METER, Meter, index)
+    lldp_decode_setup( LLDP_MED_LOCATION_ALTITUDE_UNIT_FLOOR, Floor, index)
+    index += LLDP_MED_LOCATION_ALTITUDE_UNIT_FLOOR + 1;
+
+/* LLDP MED power related constants */
+    lldp_decode_start[LLDP_MED_POW_TYPE_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_POW_TYPE_PSE, PSE, index)
+    lldp_decode_setup( LLDP_MED_POW_TYPE_PD, PD, index)
+    lldp_decode_setup( LLDP_MED_POW_TYPE_RESERVED, RESERVED, index)
+    index += LLDP_MED_POW_TYPE_RESERVED + 1;
+
+    lldp_decode_start[LLDP_MED_POW_SOURCE_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_UNKNOWN, UNKNOWN, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_PRIMARY, PRIMARY, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_BACKUP, BACKUP, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_RESERVED, RESERVED, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_PSE, PSE, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_LOCAL, LOCAL, index)
+    lldp_decode_setup( LLDP_MED_POW_SOURCE_BOTH, BOTH, index)
+    index += LLDP_MED_POW_SOURCE_BOTH + 1;
+
+    lldp_decode_start[LLDP_MED_POW_PRIO_INDEX] = index;
+    lldp_decode_setup( LLDP_MED_POW_PRIO_UNKNOWN,  Unknown, index)
+    lldp_decode_setup( LLDP_MED_POW_PRIO_CRITICAL, Critical,  index)
+    lldp_decode_setup( LLDP_MED_POW_PRIO_HIGH,     High, index)
+    lldp_decode_setup( LLDP_MED_POW_PRIO_LOW,      Low, index)
+    index += LLDP_MED_POW_PRIO_LOW + 1;
+
+/* LLDP MED capabilities */
+    lldp_decode_start[LLDP_MED_CAP_INDEX] = index;
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_CAP), CAP, index)
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_POLICY), POLICY, index)
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_LOCATION), LOCATION, index)
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_MDI_PSE), PSE, index)
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_MDI_PD), PD, index)
+    lldp_decode_setup( bit_set(LLDP_MED_CAP_IV), IV, index)
+    index += bit_set(LLDP_MED_CAP_IV) + 1;
+
+/* Protocol constants for multi-protocol lldpd */
+    lldp_decode_start[LLDP_MODE_INDEX] = index;
+    lldp_decode_setup( LLDPD_MODE_LLDP,  LLDP, index)
+    lldp_decode_setup( LLDPD_MODE_CDPV1, CDPV1, index)
+    lldp_decode_setup( LLDPD_MODE_CDPV2, CDPV2, index)
+    lldp_decode_setup( LLDPD_MODE_SONMP, SONMP, index)
+    lldp_decode_setup( LLDPD_MODE_EDP,   EDP, index)
+    lldp_decode_setup( LLDPD_MODE_FDP,   FDP, index)
+    index += LLDPD_MODE_MAX + 1;
+
+/* Bond slave src mac type constants */
+    lldp_decode_start[LLDP_BOND_SLAVE_SRC_MAC_TYPE_INDEX] = index;
+    lldp_decode_setup( LLDP_BOND_SLAVE_SRC_MAC_TYPE_UNKNOWN, Unkown, index)
+    lldp_decode_setup( LLDP_BOND_SLAVE_SRC_MAC_TYPE_REAL, Real, index)
+    lldp_decode_setup( LLDP_BOND_SLAVE_SRC_MAC_TYPE_ZERO, Zero, index)
+    lldp_decode_setup( LLDP_BOND_SLAVE_SRC_MAC_TYPE_FIXED, Fixed, index)
+    lldp_decode_setup( LLDP_BOND_SLAVE_SRC_MAC_TYPE_LOCALLY_ADMINISTERED, Locally_Administered, index)
+    lldp_decode_start[LLDP_BOND_SLAVE_SRC_MAC_TYPE_INDEX+1] = index + LLDP_BOND_SLAVE_SRC_MAC_TYPE_LOCALLY_ADMINISTERED;
+
+}
+
+
+/**********************************************************************/
+/*                   LLDP Helper Functions                            */
+/**********************************************************************/
 static void lldpd_reset(struct lldpd *cfg, struct lldpd_hardware *hw)
 {
     /* If hw is NULL we will reset all hw else reset only specific hw */
@@ -157,10 +466,11 @@ static void lldpd_reset(struct lldpd *cfg, struct lldpd_hardware *hw)
         hw->h_flags = 0;
     }
     lldpd_cleanup(cfg);
-}
+} /* lldpd_reset */
 
 #define CHANGED(x,y) (x != y)
 #define CHANGED_STR(x,y) (!(x == y || (x && y && !strcmp(x,y))))
+
 static bool lldpd_apply_tlv_configs(const struct ovsrec_open_vswitch *ovs,
                                     const char *tlv_name,
                                     u_int8_t *g_lldp_tlv_cfg)
@@ -177,7 +487,7 @@ static bool lldpd_apply_tlv_configs(const struct ovsrec_open_vswitch *ovs,
     }
 
     return send_update;
-}
+} /* lldpd_apply_tlv_configs */
 
 /*Check is ip is valid IPv4 or IPv6 address*/
 static bool validate_ip(char *ip)
@@ -190,13 +500,16 @@ static bool validate_ip(char *ip)
             return true;
     }
     return false;
-}
+} /* validate_ip */
 
+/**********************************************************************/
+/*                         Interface                                  */
+/**********************************************************************/
 static void
 del_old_db_interface(struct shash_node *sh_node)
 {
     if (sh_node) {
-        struct lldp_iface *itf = sh_node->data;
+        struct interface_data *itf = sh_node->data;
 
         /*
          * If the lldp_hardware is also cleaned up
@@ -217,7 +530,7 @@ del_old_db_interface(struct shash_node *sh_node)
 static void
 add_new_db_interface(const struct ovsrec_interface *ifrow)
 {
-    struct lldp_iface *new_itf = NULL;
+    struct interface_data *new_itf = NULL;
     struct shash_node *sh_node = shash_find(&all_interfaces, ifrow->name);
     if(!ifrow)
         return;
@@ -234,6 +547,7 @@ add_new_db_interface(const struct ovsrec_interface *ifrow)
         } else {
             new_itf->name = xstrdup(ifrow->name);
             new_itf->ifrow = ifrow;
+            new_itf->synced_from_db = 0;
             VLOG_DBG("Created local data for interface %s", ifrow->name);
         }
     } else {
@@ -262,7 +576,7 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces, struct lldpd *cfg
      * have config changes that need action. */
     SHASH_FOR_EACH(sh_node, &all_interfaces) {
         bool cfg_changed = false;
-        struct lldp_iface *itf = sh_node->data;
+        struct interface_data *itf = sh_node->data;
         const struct ovsrec_interface *ifrow =
             shash_find_data(sh_idl_interfaces, sh_node->name);
 
@@ -338,7 +652,7 @@ static void lldpd_apply_interface_changes(struct ovsdb_idl *idl,
          * Check if any table changes present.
          * If no change just return from here
          */
-        if(!OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ifrow, idl_seqno) &&
+        if(ifrow && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ifrow, idl_seqno) &&
                 !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(ifrow, idl_seqno) &&
                 !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(ifrow, idl_seqno)) {
             VLOG_DBG("No Interface cfg changes");
@@ -354,7 +668,7 @@ static void lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 
     /* Delete old interfaces. */
     SHASH_FOR_EACH_SAFE(sh_node, sh_next, &all_interfaces) {
-        struct lldp_iface *new_itf =
+        struct interface_data *new_itf =
                 shash_find_data(&sh_idl_interfaces, sh_node->name);
         if (!new_itf) {
             del_old_db_interface(sh_node);
@@ -362,7 +676,7 @@ static void lldpd_apply_interface_changes(struct ovsdb_idl *idl,
     }
     /* Add new interfaces. */
     SHASH_FOR_EACH(sh_node, &sh_idl_interfaces) {
-        struct lldp_iface *new_itf = shash_find_data(&all_interfaces,
+        struct interface_data *new_itf = shash_find_data(&all_interfaces,
                 sh_node->name);
         if (!new_itf || !new_itf->ifrow) {
             VLOG_DBG("Found an added interface %s", sh_node->name);
@@ -379,8 +693,402 @@ static void lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 
     if(rc)
         *send_now = 1;
+} /* lldpd_apply_interface_changes */
+
+/**********************************************************************/
+/*                         Bridge                                     */
+/**********************************************************************/
+static void lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
+        struct lldpd *g_lldp_cfg, bool *send_now)
+{
+    const struct ovsrec_bridge *br;
+
+    br = ovsrec_bridge_first(idl);
+    /*
+     * Check if any table changes present.
+     * If no change just return from here
+     */
+    if(br && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(br, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(br, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(br, idl_seqno)) {
+        VLOG_DBG("No Bridge cfg changes");
+        return;
+    }
+
+    /* if bridge table has a row, enable bridge capabilities */
+    if(br) {
+        if(!(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_BRIDGE)) {
+            LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled |= LLDP_CAP_BRIDGE;
+            //Update the information to local Chasis.
+            levent_update_now(g_lldp_cfg);
+            *send_now = true;
+        }
+    } else {
+        /*
+         * If bridge capabililty is set then clear since we have
+         * no bridge entries
+         */
+        if(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_BRIDGE) {
+            LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled &=  ~LLDP_CAP_BRIDGE;
+            //Update the information to local Chasis.
+            levent_update_now(g_lldp_cfg);
+            *send_now = true;
+        }
+    }
+} /* lldpd_apply_bridge_changes */
+
+/**********************************************************************/
+/*                         VRF                                        */
+/**********************************************************************/
+static void lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
+        struct lldpd *g_lldp_cfg, bool *send_now)
+{
+    const struct ovsrec_vrf *vrf;
+
+    vrf = ovsrec_vrf_first(idl);
+    /*
+     * Check if any table changes present.
+     * If no change just return from here
+     */
+    if(vrf && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(vrf, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(vrf, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(vrf, idl_seqno)) {
+        VLOG_INFO("No VRF cfg changes");
+        return;
+    }
+
+    /* if VRF table has a row, enable router capabilities */
+    if(vrf) {
+        if(!(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_ROUTER)) {
+            LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled |= LLDP_CAP_ROUTER;
+            *send_now = true;
+        }
+    } else {
+        /*
+         * If Router capabililty is set then clear since we have
+         * no VRF entries
+         */
+        if(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_ROUTER) {
+            LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled &=  ~LLDP_CAP_ROUTER;
+            *send_now = true;
+        }
+    }
+} /* lldpd_apply_vrf_changes */
+
+/**********************************************************************/
+/*                        Port/VLAN                                   */
+/**********************************************************************/
+
+static void
+set_lldp_vlan_name_tlv(int64_t vlan, struct lldpd_hardware *hw) {
+    struct lldpd_vlan *v;
+
+    /* Check if the VLAN is already here. */
+    struct lldpd_port *port = &hw->h_lport;
+    char *vlan_name;
+
+    if ((v = (struct lldpd_vlan *)
+            xcalloc(1, sizeof(struct lldpd_vlan))) == NULL)
+        return;
+
+    /* Get Vlan name from VLAN table */
+    vlan_name = vlan_name_lookup_by_vid(vlan);
+
+    if(!vlan_name) {
+        VLOG_INFO("No Vlan found for vlan id %"PRIu64"", vlan);
+        free(v);
+        return;
+    }
+
+    if ((v->v_name = strdup(vlan_name)) == NULL) {
+        free(v);
+        return;
+    }
+    v->v_vid = vlan;
+
+    VLOG_INFO("VLAN ID = %d, VLAN NAME = %s", v->v_vid, v->v_name);
+
+    TAILQ_INSERT_TAIL(&port->p_vlans, v, v_entries);
+} /* set_lldp_vlan_name_tlv */
+
+static void
+set_lldp_trunk_vlans(const struct ovsrec_port *row, struct interface_data *interface) {
+
+    int i;
+    for (i = 0; i < row->n_trunks; i++) {
+        set_lldp_vlan_name_tlv(row->trunks[i], interface->hw);
+    }
+} /* set_lldp_trunk_vlans */
+
+static void
+set_lldp_pvid(const struct ovsrec_port *row, struct interface_data *interface)
+{
+    int native_vid = -1;
+
+    if(!row) {
+        VLOG_ERR("NULL row passed to %s", __FUNCTION__);
+    }
+
+    /* Get native VID from 'tag' column. */
+    if ((row->tag != NULL)) {
+        native_vid = (int)*row->tag;
+        if(interface->hw) {
+            interface->hw->h_lport.p_pvid = native_vid;
+            VLOG_INFO("Setting pvid %d",  interface->hw->h_lport.p_pvid);
+
+            /* Also set vlan name */
+            set_lldp_vlan_name_tlv(native_vid, interface->hw);
+        }
+    }
+
+} /* set_lldp_pvid */
+
+static int
+del_old_port(struct shash_node *sh_node)
+{
+    int rc = 0;
+    int k;
+
+    if (sh_node) {
+        struct port_data *port = sh_node->data;
+        VLOG_INFO("number of interfaces in p[ort = %d", port->n_interfaces);
+        /* Clean up lldp hardware vlan info */
+        if(port && port->n_interfaces && port->interfaces) {
+            for(k=0; k < port->n_interfaces; k++) {
+                struct interface_data *intf;
+                intf = shash_find_data(&all_interfaces, port->interfaces[k]->h_ifname);
+                if(!intf) {
+                    continue;
+                }
+                intf->portdata = NULL;
+                VLOG_INFO("Cleaning up vlan info for Interface %s", port->interfaces[k]->h_ifname);
+                lldpd_vlan_cleanup(&port->interfaces[k]->h_lport);
+                port->interfaces[k]->h_lport.p_pvid = 0;
+                rc++;
+            }
+            free(port->interfaces);
+            port->n_interfaces = 0;
+        }
+
+        /* Remove this port from the list of all_ports first.
+         * This is needed to correctly update VLAN membership. */
+        shash_delete(&all_ports, sh_node);
+
+        // Done.  Free the rest of the structure.
+        free(port->name);
+        free(port);
+    }
+
+    return rc;
+
+} /* del_old_port */
+
+static int
+add_new_port(const struct ovsrec_port *port_row)
+{
+    struct port_data *new_port = NULL;
+    int rc = 0;
+
+    /* Allocate structure to save state information for this port. */
+    new_port = xzalloc(sizeof(struct port_data));
+
+    if (!shash_add_once(&all_ports, port_row->name, new_port)) {
+        VLOG_WARN("Port %s specified twice", port_row->name);
+        free(new_port);
+    } else {
+        new_port->name = xstrdup(port_row->name);
+
+        /* Initialize VLANs to NULL for now. */
+        new_port->native_vid = -1;
+        new_port->trunk_all_vlans = false;
+        new_port->vlan_mode = PORT_VLAN_MODE_ACCESS;
+        new_port->portrow = port_row;
+        VLOG_DBG("Created local data for Port %s", port_row->name);
+    }
+    return rc;
+} /* add_new_port */
+
+static int
+handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
+{
+    struct shash_node *sh_node;
+    int k;
+    int rc = 0;
+
+    /* Check for changes in the port row entries. */
+    SHASH_FOR_EACH(sh_node, &all_ports) {
+        const struct ovsrec_port *row = shash_find_data(sh_idl_ports,
+                                                        sh_node->name);
+        /* Check for changes to row. */
+        if (OVSREC_IDL_IS_ROW_INSERTED(row, idl_seqno) ||
+            OVSREC_IDL_IS_ROW_MODIFIED(row, idl_seqno)) {
+            struct port_data *port = sh_node->data;
+
+            /*
+             * Cleanup old interface list
+             * in hashmap and rebuild
+             *  */
+            if(port->interfaces && port->n_interfaces && port->interfaces) {
+                for(k=0; k < port->n_interfaces; k++) {
+                    VLOG_INFO("Cleaning up vlan info for Interface %s", port->interfaces[k]->h_ifname);
+                    lldpd_vlan_cleanup(&port->interfaces[k]->h_lport);
+                }
+                free(port->interfaces);
+            }
+
+            port->n_interfaces = row->n_interfaces;
+            port->interfaces = xzalloc(port->n_interfaces * sizeof(struct lldpd_hardware *));
+
+            /*
+             * Get vlan mode
+             * */
+
+            for (k = 0; k < row->n_interfaces; k++) {
+                struct interface_data *intf;
+                struct ovsrec_interface *iface = row->interfaces[k];
+                intf = shash_find_data(&all_interfaces, iface->name);
+                intf->portdata = port;
+                /*
+                 * - add lldp hardware to our structure so we can
+                 *   cleanup lldp hardware incase row gets deleted
+                 * - Cleanup existing lldp hardware vlan info
+                 *   since we will reconstruct this again
+                 *    */
+                if(intf->hw) {
+                    port->interfaces[k] = intf->hw;
+                }
+
+                /* Get vlan_mode first. */
+                if (row->vlan_mode) {
+                    if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_ACCESS) == 0) {
+                        port->vlan_mode = PORT_VLAN_MODE_ACCESS;
+                    } else if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK) == 0) {
+                        port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+                    } else if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_NATIVE_TAGGED) == 0) {
+                        port->vlan_mode = PORT_VLAN_MODE_NATIVE_TAGGED;
+                    } else if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_NATIVE_UNTAGGED) == 0) {
+                        port->vlan_mode = PORT_VLAN_MODE_NATIVE_UNTAGGED;
+                    } else {
+                        /* Should not happen.  Assume TRUNK mode to match bridge.c. */
+                        VLOG_ERR("Invalid VLAN mode %s", row->vlan_mode);
+                        port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+                    }
+                } else {
+                    /* 'vlan_mode' column is not specified.  Follow default rules:
+                     *   - If 'tag' contains a value, the port is an access port.
+                     *   - Otherwise, the port is a trunk port. */
+                    if (row->tag != NULL) {
+                        port->vlan_mode = PORT_VLAN_MODE_ACCESS;
+                    } else {
+                        port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+                    }
+                }
+
+                /*
+                 * Set native vlan config into lldp
+                 * Ignore tag (pvid) column when in trunk mode,
+                 * will be applied only when in
+                 * - access mode
+                 * - native tagged
+                 * - native untagged
+                 *  */
+                if(port->vlan_mode != PORT_VLAN_MODE_TRUNK)
+                   set_lldp_pvid(row, intf);
+
+                /*
+                 * Set Trunk Vlans into lldp
+                 * Ignore trunks in access mode
+                 *  */
+                if(port->vlan_mode != PORT_VLAN_MODE_ACCESS)
+                   set_lldp_trunk_vlans(row, intf);
+                rc ++;
+            }
+
+
+        }
+    }
+    return rc;
 }
 
+static void
+lldpd_apply_port_changes(struct ovsdb_idl *idl,
+        struct lldpd *g_lldp_cfg, bool *send_now)
+{
+    struct shash sh_idl_ports;
+    const struct ovsrec_port *row;
+    struct shash_node *sh_node, *sh_next;
+    row = ovsrec_port_first(idl);
+
+    /*
+     * Check if any table changes present.
+     * If no change just return from here
+     */
+    if(row && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(row, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(row, idl_seqno) &&
+            !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(row, idl_seqno)) {
+        VLOG_DBG("No Port cfg changes");
+        return;
+    }
+
+    /* Collect all the ports in the DB. */
+    shash_init(&sh_idl_ports);
+    OVSREC_PORT_FOR_EACH(row, idl) {
+        if (!shash_add_once(&sh_idl_ports, row->name, row)) {
+            VLOG_WARN("port %s specified twice", row->name);
+        }
+    }
+
+    /* Delete old ports. */
+    SHASH_FOR_EACH_SAFE(sh_node, sh_next, &all_ports) {
+        struct port_data *port = shash_find_data(&sh_idl_ports, sh_node->name);
+        if (!port) {
+            VLOG_DBG("Found a deleted port %s", sh_node->name);
+            if (del_old_port(sh_node)) {
+                *send_now = 1;
+            }
+        }
+    }
+
+    /* Add new ports. */
+    SHASH_FOR_EACH(sh_node, &sh_idl_ports) {
+        struct port_data *new_port = shash_find_data(&all_ports, sh_node->name);
+        if (!new_port) {
+            VLOG_DBG("Found an added port %s", sh_node->name);
+            if(add_new_port(sh_node->data)) {
+                *send_now = 1;
+            }
+        }
+    }
+
+    /* handle any config changes */
+    if(handle_port_config_mods(&sh_idl_ports, g_lldp_cfg))
+        *send_now = 1;
+
+    /* Destroy the shash of the IDL ports */
+    shash_destroy(&sh_idl_ports);
+} /* lldpd_apply_port_changes */
+
+static char*
+vlan_name_lookup_by_vid(int64_t vid)
+{
+    const struct ovsrec_vlan *row;
+
+    /* Collect all the VLANs in the DB. */
+
+    OVSREC_VLAN_FOR_EACH(row, idl) {
+        if(row->id == vid)
+        {
+            return row->name;
+        }
+    }
+
+    return NULL;
+
+} /* vlan_name_lookup_by_vid */
+
+/**********************************************************************/
+/*                         Open_vSwitch                               */
+/**********************************************************************/
 static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
         struct lldpd *g_lldp_cfg, bool *send_now)
 {
@@ -395,7 +1103,7 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
      * Check if any table changes present.
      * If no change just return from here
      */
-    if(!OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ovs, idl_seqno) &&
+    if(ovs && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ovs, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(ovs, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(ovs, idl_seqno)) {
         VLOG_DBG("No Open_vSwitch cfg changes");
@@ -438,7 +1146,7 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
 
         const char *lldp_mgmt_pattern = smap_get(&ovs->other_config,
                 OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
-        if(lldp_mgmt_pattern != NULL){
+        if(lldp_mgmt_pattern != NULL) {
             if(CHANGED_STR(lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
                 if(validate_ip((char *) lldp_mgmt_pattern)) {
                     if(g_lldp_cfg->g_config.c_mgmt_pattern != NULL)
@@ -510,10 +1218,6 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
             *send_now=1;
         }
 
-        /*
-        ** IMPORTANT: Keep enable/disable configuration at the end so that all
-        ** other configs are configured prior to enabling.
-        */
         lldp_enabled = smap_get_bool(&ovs->other_config,
                                  OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_ENABLE,
                                  OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_ENABLE_DEFAULT);
@@ -554,7 +1258,126 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
         levent_update_now(g_lldp_cfg);
     }
     return;
+} /* lldpd_apply_global_changes */
+
+/**********************************************************************/
+/*                OVS poll loop to libevent                           */
+/**********************************************************************/
+void ovs_libevent_schedule_nbr(void *arg){
+    struct lldpd *cfg = arg;
+
+    nbr_event = event_new(cfg->g_base, -1, 0, ovs_libevent_cb, cfg);
+    event_active(timeout_event, EV_TIMEOUT, 1);
+
+    return;
 }
+
+static void ovs_clear_libevents()
+{
+    struct poll_loop *loop = poll_loop();
+    struct poll_node *node;
+
+    /* Clear and free all the fd events. */
+    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
+        if(node->event) {
+            event_del((struct event*) node->event);
+            event_free((struct event*) node->event);
+            node->event = NULL;
+        }
+    }
+
+    /* Clear and free timeout event */
+    if(timeout_event) {
+        event_del(timeout_event);
+        event_free(timeout_event);
+        timeout_event = NULL;
+    }
+
+    free_poll_nodes(loop);
+    loop->timeout_when = LLONG_MAX;
+    loop->timeout_where = NULL;
+} /* ovs_clear_libevents */
+
+static void ovs_libevent_cb(evutil_socket_t fd, short what, void *arg){
+    struct lldpd *cfg = arg;
+    int retval = 0;
+    struct timeval tv;
+
+    ovs_clear_libevents();
+
+    lldpd_run(cfg);
+    lldpd_wait();
+
+    retval = ovspoll_to_libevent(cfg);
+    if(retval == -1) // Nothing was scheduled, due to connection error, lets schedule cb after 1 sec
+    {
+        tv.tv_sec =  1;
+        tv.tv_usec = 0;
+        timeout_event = event_new(cfg->g_base, -1, 0,
+            ovs_libevent_cb,
+                cfg);
+        event_add(timeout_event, &tv);
+    }
+    return;
+} /* ovs_libevent_cb */
+
+static int
+ovspoll_to_libevent(struct lldpd *cfg)
+{
+    struct poll_loop *loop = poll_loop();
+    long long int timeout;
+    struct poll_node *node;
+    struct timeval tv;
+    int retval = -1;
+    int events_scheduled = 0;
+
+    /* Populate with all the fds events. */
+    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
+        //VLOG_INFO("in poll to event .. adding fd %d to libevent",node->pollfd.fd);
+        levent_make_socket_nonblocking(node->pollfd.fd);
+        node->event = event_new(cfg->g_base, node->pollfd.fd ,
+            EV_READ, ovs_libevent_cb, cfg);
+        retval = event_add((struct event*) node->event , NULL);
+        if(!retval)
+            events_scheduled ++;
+        //event_base_dump_events(cfg->g_base, stdout);
+
+    }
+
+    /* Populate the timeout event */
+    timeout = loop->timeout_when - time_msec();
+    if(timeout > 0 && loop->timeout_when > 0 && loop->timeout_when < LLONG_MAX) {
+        //VLOG_INFO("setting timer to callback to %d", timeout);
+        tv.tv_sec = 0;
+        tv.tv_usec = 0;
+        if(timeout < 1000)
+            tv.tv_usec = (timeout) * 1000 ; //to usecond
+        else
+            tv.tv_sec =  timeout/1000;
+        timeout_event = event_new(cfg->g_base, -1, 0,
+                                       ovs_libevent_cb,
+                                                  cfg);
+        retval = event_add(timeout_event, &tv);
+        if(!retval)
+            events_scheduled ++;
+        //VLOG_INFO("timeout event added %d, fd = %d", timeout, (int)timeout_event->ev_fd);
+        //event_base_dump_events(cfg->g_base, stdout);
+    }
+
+    if(events_scheduled)
+        return 0;
+
+    // Nothing was scheduled, return -1
+    return -1;
+} /* ovspoll_to_libevent */
+
+void init_ovspoll_to_libevent(struct lldpd *cfg){
+    ovs_clear_libevents();
+    lldpd_run(cfg);
+    lldpd_wait();
+    ovspoll_to_libevent(cfg);
+    return;
+} /* init_ovspoll_to_libevent */
 
 /******************************************************************************
 *******************************************************************************
@@ -570,8 +1393,8 @@ static u_int64_t lldpd_stats_check_interval =
     LLDP_CHECK_STATS_FREQUENCY_DFLT_MSEC;
 
 /*
-** global versions of interface counters (summed up)
-*/
+ * global versions of interface counters (summed up)
+ */
 static u_int64_t total_h_tx_cnt = 0;
 static u_int64_t total_h_rx_cnt = 0;
 static u_int64_t total_h_rx_discarded_cnt = 0;
@@ -596,23 +1419,77 @@ static char *lldp_interface_statistics_keys [] = {
     (sizeof(lldp_interface_statistics_keys) / sizeof(char*))
 
 /*
-** Report ONE interface's stats to the db
-*/
+ * read back a counter from interface & update the count on interface
+ */
+#define SYNC_COUNTER_FROM_DB(KEY, HW_COUNTER) \
+    { \
+        int64_t db_value = 0; \
+        (void) ovsdb_datum_get_int64_value_given_string_key(datum, KEY, &db_value); \
+        dual_itf->hw->HW_COUNTER += db_value; \
+        VLOG_DBG("%s counter %s restored to %llu", \
+            dual_itf->name, KEY, db_value); \
+    }
+
+/*
+ * Read back all counters from db in case we just restarted from a crash.
+ * Note that it is NOT an error if counters cannot be read
+ * back from the database.  It simply means that the database also just
+ * re-started from scratch.
+ */
 static void
-lldp_process_one_interface_counters (char *if_name,
-    struct lldpd_hardware *hardware,
-    struct ovsrec_interface *ifrow)
+sync_lldp_counters_from_db (struct interface_data *dual_itf)
+{
+    struct ovsdb_datum *datum;
+    struct lldpd_hardware *hw;
+
+    VLOG_DBG("entered sync_lldp_counters_from_db for %s",
+        dual_itf->name);
+
+    datum = ovsrec_interface_get_lldp_statistics(dual_itf->ifrow,
+        OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+
+    /* can happen if ovsdb also re-started from scratch */
+    if (NULL == datum) {
+        VLOG_DBG("ovsrec_interface_get_lldp_statistics returned NULL for %s",
+            dual_itf->name);
+    } else {
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_TX_COUNT, h_tx_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_RX_COUNT, h_rx_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_RX_DISCARDED_COUNT,
+            h_rx_discarded_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_RX_UNRECOGNIZED_COUNT,
+            h_rx_unrecognized_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_AGEOUT_COUNT, h_ageout_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_INSERT_COUNT, h_insert_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_DELETE_COUNT, h_delete_cnt);
+        SYNC_COUNTER_FROM_DB(INTERFACE_STATISTICS_LLDP_DROP_COUNT, h_drop_cnt);
+    }
+}
+
+/*
+ * Report ONE interface's stats to the db
+ */
+static void
+lldp_process_one_interface_counters (struct interface_data *dual_itf)
 {
     int total = 0;
     int64_t values [LLDPD_TOTAL_STATS_PER_INTERFACE];
+    struct lldpd_hardware *hardware = dual_itf->hw;
+    struct ovsrec_interface *ifrow = dual_itf->ifrow;
 
-    /* if either pointer not found, forget it */
+    /* if either pointer not found, cannot proceed */
     if (!hardware || !ifrow) {
-        VLOG_ERR("could not check stats for %s (hardware %s, dbrow %s)",
-            if_name,
+        VLOG_DBG("could not check stats for %s (hardware %s, dbrow %s)",
+            dual_itf->name,
             hardware ? "valid" : "NULL",
             ifrow ? "valid" : "NULL");
         return;
+    }
+
+    /* if started new, sync back the counters from the db */
+    if (!dual_itf->synced_from_db) {
+        sync_lldp_counters_from_db(dual_itf);
+        dual_itf->synced_from_db = 1;
     }
 
 /*----------------------------------------------------------------------------*/
@@ -644,7 +1521,7 @@ static void
 lldp_process_all_interfaces_counters (struct lldpd *cfg)
 {
     struct shash_node *sh_node;
-    struct lldp_iface *dual_itf;
+    struct interface_data *dual_itf;
 
     /* start counting these in case anything changed */
     total_h_tx_cnt = 0;
@@ -659,16 +1536,15 @@ lldp_process_all_interfaces_counters (struct lldpd *cfg)
     /* for each interface, compare & update db */
     SHASH_FOR_EACH(sh_node, &all_interfaces) {
         dual_itf = sh_node->data;
-        lldp_process_one_interface_counters(dual_itf->name,
-            dual_itf->hw, dual_itf->ifrow);
+        lldp_process_one_interface_counters(dual_itf);
     }
 }
 
 /*
-** Report changes on the GLOBAL lldp stats.
-** This is called ASSUMING that the values
-** have actually changed.
-*/
+ * Report changes on the GLOBAL lldp stats.
+ * This is called ASSUMING that the values
+ * have actually changed.
+ */
 static void
 lldp_process_global_counters (struct lldpd *cfg)
 {
@@ -705,12 +1581,17 @@ static struct ovsdb_idl_txn *lldp_stats_txn = NULL;
 
     enum ovsdb_idl_txn_status status;
 
+    /* if we have not synced our db cache, dont continue */
+    if (!ovsdb_idl_has_ever_connected(idl)) {
+        return;
+    }
+
+    /* ok we must have talked to database at least once, continue */
     if (NULL == lldp_stats_txn) {
         lldp_stats_txn = ovsdb_idl_txn_create(idl);
         lldp_process_all_interfaces_counters(cfg);
         lldp_process_global_counters(cfg);
     }
-
     status = ovsdb_idl_txn_commit(lldp_stats_txn);
     if (status != TXN_INCOMPLETE) {
         ovsdb_idl_txn_destroy(lldp_stats_txn);
@@ -719,13 +1600,13 @@ static struct ovsdb_idl_txn *lldp_stats_txn = NULL;
 }
 
 /*
-** This is the lldp main stat reporting scheduling function.
-** It makes sure that it runs every "lldpd_stats_check_interval"
-** seconds and if somehow it gets called before that time has
-** elapsed, reschedules itself to be called at precisely that
-** interval.  When the exact time is hit, it calls the main worker
-** function "lldpd_stats_analyze".
-*/
+ * This is the lldp main stat reporting scheduling function.
+ * It makes sure that it runs every "lldpd_stats_check_interval"
+ * seconds and if somehow it gets called before that time has
+ * elapsed, reschedules itself to be called at precisely that
+ * interval.  When the exact time is hit, it calls the main worker
+ * function "lldpd_stats_analyze".
+ */
 static void
 lldpd_stats_run (struct lldpd *cfg)
 {
@@ -762,7 +1643,8 @@ lldpd_stats_run (struct lldpd *cfg)
 **
 *******************************************************************************
 ******************************************************************************/
-static bool 
+
+static bool
 lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 {
     struct lldpd_hardware *hardware;
@@ -775,12 +1657,13 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
     int    port_ttl;
     bool   nbr_change = false;
     struct shash_node *if_node;
-    struct lldp_iface *itf;
-    
-    /* Scan all hardware interfaces in lldpd and look for updates 
+    struct interface_data *itf;
+
+
+    /* Scan all hardware interfaces in lldpd and look for updates
      * When we find an interface that got changed, find a corrosponding
      * OVSDB nbr and update that nbr according to lldps change opcode
-     */  
+     */
     SHASH_FOR_EACH(if_node, &all_interfaces) {
         itf = if_node->data;
         if  (itf && itf->hw && itf->ifrow) {
@@ -789,14 +1672,14 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
         } else {
             continue;
         }
-    
+
         if (hardware->h_rport_change_opcode == LLDPD_AF_NBR_NOOP) {
             continue;
         } else {
                 if (strcmp(ifrow->name, hardware->h_ifname) == 0) {
                     /* If no neighbor info in DB, write everything */
                     if (hardware->h_rport_change_opcode == LLDPD_AF_NBR_UPD) {
-                        port_ttl_str = smap_get(&ifrow->lldp_neighbor_info, "p_chassis.c_ttl");
+                        port_ttl_str = smap_get(&ifrow->lldp_neighbor_info, "chassis_ttl");
                         if (port_ttl_str == NULL) {
                            hardware->h_rport_change_opcode = LLDPD_AF_NBR_ADD;
                         }
@@ -805,7 +1688,7 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 
                         case LLDPD_AF_NBR_ADD:
                         case LLDPD_AF_NBR_MOD:
-                            VLOG_INFO("%s i/f %s ADD/MOD", __FUNCTION__, ifrow->name); 
+                            VLOG_INFO("%s i/f %s ADD/MOD", __FUNCTION__, ifrow->name);
                             TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
                                 lldp_nbr_update(&smap_nbr, port);
                                 ovsrec_interface_set_lldp_neighbor_info(ifrow, &smap_nbr);
@@ -816,13 +1699,13 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
                             break;
 
                         case LLDPD_AF_NBR_UPD:
-                            VLOG_INFO("%s i/f %s UPD", __FUNCTION__, ifrow->name); 
+                            VLOG_DBG("%s i/f %s UPD", __FUNCTION__, ifrow->name);
                             TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
-                                char last_update_s[10];  
-        	                sprintf(last_update_s, "%llx", (long long)port->p_lastupdate); 
-                                VLOG_INFO("Updating nbr time to %s", last_update_s);
+                                char last_update_s[10];
+                                sprintf(last_update_s, "%llx", (long long)port->p_lastupdate);
+                                VLOG_DBG("Updating nbr time to %s", last_update_s);
                                 smap_clone(&smap_nbr, &ifrow->lldp_neighbor_info);
-                                smap_replace(&smap_nbr, "p_nbr.p_lastupdate", last_update_s);
+                                smap_replace(&smap_nbr, "port_lastupdate", last_update_s);
                                 ovsrec_interface_set_lldp_neighbor_info(ifrow, &smap_nbr);
                                 smap_destroy(&smap_nbr);
                                 nbr_change = true;
@@ -831,17 +1714,17 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
                             break;
 
                         case LLDPD_AF_NBR_DEL:
-                            VLOG_INFO("%s i/f %s DEL", __FUNCTION__, ifrow->name); 
+                            VLOG_INFO("%s i/f %s DEL", __FUNCTION__, ifrow->name);
                             ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
                             nbr_change = true;
                             break;
 
                         case LLDPD_AF_NBR_NOOP:
-                            VLOG_INFO("%s i/f %s NOOP", __FUNCTION__, ifrow->name); 
+                            VLOG_DBG("%s i/f %s NOOP", __FUNCTION__, ifrow->name);
                             break;
 
                         default:
-                            VLOG_INFO("%s i/f %s dafault", __FUNCTION__, ifrow->name); 
+                            VLOG_DBG("%s i/f %s dafault", __FUNCTION__, ifrow->name);
                             /* Nothing to do */
                             break;
                     } /* switch */
@@ -857,15 +1740,15 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
      * fails to report aged out nbr entries in a timely manner.
      */
     OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
-        last_update_str = smap_get(&ifrow->lldp_neighbor_info, "p_nbr.p_lastupdate");
-        port_ttl_str    = smap_get(&ifrow->lldp_neighbor_info, "p_chassis.c_ttl");
+        last_update_str = smap_get(&ifrow->lldp_neighbor_info, "port_lastupdate");
+        port_ttl_str    = smap_get(&ifrow->lldp_neighbor_info, "chassis_ttl");
         if ((last_update_str != NULL) && (port_ttl_str != NULL)) {
             last_update_db = strtoll(last_update_str, 0, 16);
             port_ttl = atoi(port_ttl_str);
-            VLOG_INFO("%s timestamps: cur=%0llx last_update=%llx port_ttl=%d (sec)", 
-                     __FUNCTION__, time(NULL), last_update_db, port_ttl);
+            VLOG_DBG("%s timestamps: cur=%0llx last_update=%llx port_ttl=%d (sec)",
+                     __FUNCTION__, (long long)time(NULL),(long long) last_update_db, port_ttl);
             if (time(NULL) - last_update_db > port_ttl + 2) {
-                VLOG_INFO("%s aging out interfcae %s", __FUNCTION__, ifrow->name); 
+                VLOG_INFO("%s aging out interfcae %s", __FUNCTION__, ifrow->name);
                 ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
                 nbr_change = true;
             }
@@ -875,7 +1758,7 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 }
 
 
-static void 
+static void
 lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 {
     struct lldpd_hardware *hardware;
@@ -883,13 +1766,13 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
     struct lldpd_port *port;
     struct smap smap_nbr;
     bool found = false;
-    
+
     /* Scan all hardware interfaces in lldpd
-     * Copy nbr info from lldpd to OVSDB whenever lldpd has a port entry 
+     * Copy nbr info from lldpd to OVSDB whenever lldpd has a port entry
      * Otherwise, delete nbr info from OVSDB
-     */  
+     */
     TAILQ_FOREACH(hardware, &cfg->g_hardware, h_entries) {
-            
+
         found = false;
         OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
             if (strcmp(ifrow->name, hardware->h_ifname) == 0) {
@@ -906,11 +1789,15 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 
                     hardware->h_rport_change_opcode = LLDPD_AF_NBR_NOOP;
             } /* strcmp */
-        } /* ovsrec loop */ 
+        } /* ovsrec loop */
     } /* hardware loop */
 
     return;
 }
+
+/**********************************************************************/
+/*                         OVSDB                                      */
+/**********************************************************************/
 
 static void
 lldpd_reconfigure(struct ovsdb_idl *idl,struct lldpd *g_lldp_cfg)
@@ -924,6 +1811,9 @@ lldpd_reconfigure(struct ovsdb_idl *idl,struct lldpd *g_lldp_cfg)
     }
 
     lldpd_apply_interface_changes(idl, g_lldp_cfg, &send_now);
+    lldpd_apply_bridge_changes(idl, g_lldp_cfg, &send_now);
+    lldpd_apply_vrf_changes(idl, g_lldp_cfg, &send_now);
+    lldpd_apply_port_changes(idl, g_lldp_cfg, &send_now);
     lldpd_apply_global_changes(idl, g_lldp_cfg, &send_now);
 
     if(send_now){
@@ -932,7 +1822,7 @@ lldpd_reconfigure(struct ovsdb_idl *idl,struct lldpd *g_lldp_cfg)
     }
 
     idl_seqno = new_idl_seqno;
-}
+} /* lldpd_reconfigure */
 
 static void
 lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
@@ -942,13 +1832,13 @@ lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
 #define REM_BUF_LEN (BUF_LEN - 1 - strlen(buf))
     //unixctl_command_reply_error(conn, "Nothing to dump :)");
     struct shash_node *sh_node;
-    char *buf = xmalloc(BUF_LEN);
+    char *buf = xcalloc(1, BUF_LEN);
     int first_row_done = 0;
     /* Loop through all the current interfaces and figure out how many
      * have config changes that need action. */
     SHASH_FOR_EACH(sh_node, &all_interfaces) {
 
-              struct lldp_iface *itf = sh_node->data;
+              struct interface_data *itf = sh_node->data;
 
               if(itf->hw && first_row_done == 0) {
                   if(itf->hw->h_cfg->g_protocols[0].enabled)
@@ -989,7 +1879,7 @@ lldpd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
     }
     unixctl_command_reply(conn, buf);
     free(buf);
-}
+} /* lldpd_unixctl_dump */
 
 static void
 halon_lldpd_exit(struct unixctl_conn *conn, int argc OVS_UNUSED,
@@ -998,7 +1888,7 @@ halon_lldpd_exit(struct unixctl_conn *conn, int argc OVS_UNUSED,
     bool *exiting = exiting_;
     *exiting = true;
     unixctl_command_reply(conn, NULL);
-}
+} /* halon_lldpd_exit */
 
 static inline void lldpd_chk_for_system_configured(void)
 {
@@ -1057,7 +1947,7 @@ lldpd_run(struct lldpd *cfg)
         confirm_txn = ovsdb_idl_txn_create(idl);
 
         if (!confirm_txn_try_again) {
-            VLOG_INFO("Invoking lldpd_ovsdb_nbrs_run");
+            VLOG_DBG("Invoking lldpd_ovsdb_nbrs_run");
             nbr_change = lldpd_ovsdb_nbrs_run(idl, cfg);
             if (!nbr_change) {
                 ovsdb_idl_txn_destroy(confirm_txn);
@@ -1082,69 +1972,20 @@ lldpd_run(struct lldpd *cfg)
             if (status == TXN_SUCCESS) {
                 confirm_txn_try_again = false;
             } else {
+                VLOG_INFO("%s OVSDB write failure status= %d", __FUNCTION__, status);
                 confirm_txn_try_again = true;
             }
         }
     }
-
-}
+} /* lldpd_run */
 
 static void
 lldpd_wait (void)
 {
     ovsdb_idl_wait(idl);
     unixctl_server_wait(appctl);
-}
+} /* lldpd_run */
 
-static int
-ovspoll_to_libevent(struct lldpd *cfg)
-{
-    struct poll_loop *loop = poll_loop();
-    long long int timeout;
-    struct poll_node *node;
-    struct timeval tv;
-    int retval = -1;
-    int events_scheduled = 0;
-
-    /* Populate with all the fds events. */
-    HMAP_FOR_EACH (node, hmap_node, &loop->poll_nodes) {
-        //VLOG_INFO("in poll to event .. adding fd %d to libevent",node->pollfd.fd);
-        levent_make_socket_nonblocking(node->pollfd.fd);
-        node->event = event_new(cfg->g_base, node->pollfd.fd ,
-            EV_READ, ovs_libevent_cb, cfg);
-        retval = event_add((struct event*) node->event , NULL);
-        if(!retval)
-            events_scheduled ++;
-        //event_base_dump_events(cfg->g_base, stdout);
-
-    }
-
-    /* Populate the timeout event */
-    timeout = loop->timeout_when - time_msec();
-    if(timeout > 0 && loop->timeout_when > 0 && loop->timeout_when < LLONG_MAX) {
-        //VLOG_INFO("setting timer to callback to %d", timeout);
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
-        if(timeout < 1000)
-            tv.tv_usec = (timeout) * 1000 ; //to usecond
-        else
-            tv.tv_sec =  timeout/1000;
-        timeout_event = event_new(cfg->g_base, -1, 0,
-                                       ovs_libevent_cb,
-                                                  cfg);
-        retval = event_add(timeout_event, &tv);
-        if(!retval)
-            events_scheduled ++;
-        //VLOG_INFO("timeout event added %d, fd = %d", timeout, (int)timeout_event->ev_fd);
-        //event_base_dump_events(cfg->g_base, stdout);
-    }
-
-    if(events_scheduled)
-        return 0;
-
-    // Nothing was scheduled, return -1
-    return -1;
-}
 
 /* Create a connection to the OVSDB at db_path and create a dB cache
  * for this daemon. */
@@ -1177,15 +2018,32 @@ ovsdb_init(const char *db_path)
     ovsdb_idl_add_column(idl, &ovsrec_interface_col_lldp_neighbor_info);
     ovsdb_idl_omit_alert(idl, &ovsrec_interface_col_lldp_neighbor_info);
 
+    ovsdb_idl_add_table(idl, &ovsrec_table_bridge);
+    ovsdb_idl_add_column(idl, &ovsrec_bridge_col_name);
+
+    ovsdb_idl_add_table(idl, &ovsrec_table_vrf);
+    ovsdb_idl_add_column(idl, &ovsrec_vrf_col_name);
+
+    ovsdb_idl_add_table(idl, &ovsrec_table_port);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_name);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_interfaces);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_mode);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_tag);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_trunks);
+
+    ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
+    ovsdb_idl_add_column(idl, &ovsrec_vlan_col_name);
+    ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
+
     /* Register ovs-appctl commands for this daemon. */
     unixctl_command_register("lldpd/dump", "", 0, 0, lldpd_unixctl_dump, NULL);
-} // ovsdb_init
+} /* ovsdb_init */
 
 static void
 ovsdb_exit(void)
 {
     ovsdb_idl_destroy(idl);
-}
+} /* ovsdb_exit */
 
 static void
 usage(void)
@@ -1203,7 +2061,7 @@ usage(void)
            "  -h, --help              display this help message\n"
            "  -V, --version           display version information\n");
     exit(EXIT_SUCCESS);
-}
+} /* usage */
 
 static char *
 lldp_ovsdb_parse_options(int argc, char *argv[], char **unixctl_pathp)
@@ -1263,7 +2121,53 @@ lldp_ovsdb_parse_options(int argc, char *argv[], char **unixctl_pathp)
     argv += optind;
 
     return xasprintf("unix:%s/db.sock", ovs_rundir());
-} // parse_options
+} /* lldp_ovsdb_parse_options */
+
+/* TLV macros and enums are based on struct pointer names and fiels names
+ * If any of them change, one has to change TLV enums and macros to match
+ */
+static void
+lldp_ovsdb_setup_tlv(void)
+{
+    lldp_to_tlv_set(p_chassis_c_cap_available, chassis_capability_available)
+    lldp_to_tlv_set(p_chassis_c_cap_enabled, chassis_capability_enabled)
+    lldp_to_tlv_set(p_chassis_c_descr, chassis_description)
+    lldp_to_tlv_set(p_chassis_c_id, chassis_id)
+    lldp_to_tlv_set(p_chassis_c_id_len, chassis_id_len)
+    lldp_to_tlv_set(p_chassis_c_id_subtype, chassis_id_subtype)
+    lldp_to_tlv_set(p_chassis_c_index, chassis_index)
+    lldp_to_tlv_set(p_chassis_c_name, chassis_name)
+    lldp_to_tlv_set(p_chassis_c_protocol, chassis_protocol)
+    lldp_to_tlv_set(p_chassis_c_refcount, chassis_refcount)
+    lldp_to_tlv_set(p_chassis_c_ttl, chassis_ttl)
+    lldp_to_tlv_set(p_macphy_autoneg_advertised, macphy_autoneg_advertised)
+    lldp_to_tlv_set(p_macphy_autoneg_enabled, macphy_autoneg_enabled)
+    lldp_to_tlv_set(p_macphy_autoneg_support, macphy_autoneg_support)
+    lldp_to_tlv_set(p_macphy_mau_type, macphy_mau_type)
+    lldp_to_tlv_set(p_nbr_p_descr, port_description)
+    lldp_to_tlv_set(p_nbr_p_hidden_in, port_hidden_in)
+    lldp_to_tlv_set(p_nbr_p_hidden_out, port_hidden_out)
+    lldp_to_tlv_set(p_nbr_p_id, port_id)
+    lldp_to_tlv_set(p_nbr_p_id_len, port_id_len)
+    lldp_to_tlv_set(p_nbr_p_id_subtype, port_id_subtype)
+    lldp_to_tlv_set(p_nbr_p_lastchange, port_lastchange)
+    lldp_to_tlv_set(p_nbr_p_lastupdate, port_lastupdate)
+    lldp_to_tlv_set(p_nbr_p_mfs, port_mfs)
+    lldp_to_tlv_set(p_nbr_p_protocol, port_protocol)
+    lldp_to_tlv_set(p_nbr_p_pvid, port_pvid)
+    lldp_to_tlv_set(p_power_allocated, power_allocated)
+    lldp_to_tlv_set(p_power_class, power_class)
+    lldp_to_tlv_set(p_power_devicetype, power_devicetype)
+    lldp_to_tlv_set(p_power_enabled, power_enabled)
+    lldp_to_tlv_set(p_power_paircontrol, power_paircontrol)
+    lldp_to_tlv_set(p_power_pairs, power_pairs)
+    lldp_to_tlv_set(p_power_powertype, power_powertype)
+    lldp_to_tlv_set(p_power_priority, power_priority)
+    lldp_to_tlv_set(p_power_requested, power_requested)
+    lldp_to_tlv_set(p_power_source, power_source)
+    lldp_to_tlv_set(p_power_supported, power_supported)
+
+}
 
 void lldpd_ovsdb_init(int argc, char *argv[]){
     int retval;
@@ -1271,6 +2175,12 @@ void lldpd_ovsdb_init(int argc, char *argv[]){
     set_program_name(argv[0]);
     proctitle_init(argc, argv);
     fatal_ignore_sigpipe();
+
+    /* setup a map between lldp fields to standard key names */
+    lldp_ovsdb_setup_tlv();
+
+    /* setup feature opcode decode table */
+    lldp_ovsdb_setup_decode();
 
     /* Parse commandline args and get the name of the OVSDB socket. */
     ovsdb_sock = lldp_ovsdb_parse_options(argc, argv, &appctl_path);
@@ -1302,26 +2212,24 @@ void lldpd_ovsdb_init(int argc, char *argv[]){
 
    VLOG_INFO_ONCE("%s (Halon LLDPD Daemon) started", program_name);
    return;
-}
+} /* lldpd_ovsdb_init */
 
-void lldpd_ovsdb_exit(void){
+void lldpd_ovsdb_exit(void)
+{
     ovsdb_exit();
-}
+} /* lldpd_ovsdb_exit */
 
-void init_ovspoll_to_libevent(struct lldpd *cfg){
-    ovs_clear_libevents();
-    lldpd_run(cfg);
-    lldpd_wait();
-    ovspoll_to_libevent(cfg);
-    return;
-}
-
+/*
+ * Functions to provide hooks to lldp code to add
+ * and delete hardware interfaces to our global
+ * interface hashmap
+ */
 void
 del_lldpd_hardware_interface(struct lldpd_hardware *hw)
 {
     if (hw) {
         struct shash_node *sh_node = shash_find(&all_interfaces, hw->h_ifname);
-        struct lldp_iface *itf;
+        struct interface_data *itf;
 
         if(!sh_node) {
             VLOG_ERR("Unable to delete an lldp interface %s that has no entry "
@@ -1344,7 +2252,7 @@ del_lldpd_hardware_interface(struct lldpd_hardware *hw)
             itf->hw = NULL;
         }
     }
-} /* del_old_interface */
+} /* del_lldpd_hardware_interface */
 
 void
 add_lldpd_hardware_interface(struct lldpd_hardware *hw)
@@ -1352,7 +2260,7 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
     VLOG_DBG("lldpd harware interface %s being added!\n", hw->h_ifname);
     if (hw) {
         struct shash_node *sh_node = shash_find(&all_interfaces, hw->h_ifname);
-        struct lldp_iface *itf = NULL;
+        struct interface_data *itf = NULL;
 
         if(!sh_node) {
             /* Allocate structure to save state information for this interface. */
@@ -1364,9 +2272,11 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
             } else {
                 itf->name = xstrdup(hw->h_ifname);
                 itf->hw = hw;
+                itf->portdata = NULL;
                 VLOG_DBG("Created local data for interface %s", hw->h_ifname);
             }
         } else {
+
             itf = sh_node->data;
             itf->hw = hw;
 
@@ -1399,54 +2309,80 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
                 link_state_bool = true;
             }
             itf->hw->h_link_state = link_state_bool;
+
         }
     }
 } /* add_new_interface */
 
-#define MAX_LINE 132
+void add_vlans_from_ovsdb(char *hw_name)
+{
+    if (hw_name) {
+        struct shash_node *sh_node = shash_find(&all_interfaces, hw_name);
+        struct interface_data *itf = NULL;
+
+        if(!sh_node) {
+                VLOG_ERR("No hardware interface entry in hashmap or %s", hw_name);
+                return;
+        } else {
+
+            itf = sh_node->data;
+            /* VLAN TLV init */
+            if(itf && itf->portdata) {
+                //VLOG_INFO("interface name = %s", itf->portrow->name);
+                struct port_data *port = shash_find_data(&all_ports, itf->portdata->name);
+                if(port && port->vlan_mode != PORT_VLAN_MODE_TRUNK)
+                    set_lldp_pvid(itf->portdata->portrow, itf);
+                if(port && port->vlan_mode != PORT_VLAN_MODE_ACCESS)
+                    set_lldp_trunk_vlans(itf->portdata->portrow, itf);
+            }
+        }
+    }
+} /* add_vlans_from_ovsdb */
 
 #define key_strval_str(pbuf, poffset, key, val, key_array, val_array) \
-	do { \
-		*key_array = &pbuf[*poffset]; \
-        	*poffset += sprintf(&pbuf[*poffset], "%s", #key ); \
-		*poffset += 1; \
-		*val_array = &pbuf[*poffset]; \
-        	*poffset += snprintf(&pbuf[*poffset], MAX_LINE, "%s", val); \
-		*poffset += 1; \
-	} while(0);	
+    do { \
+        *key_array = &pbuf[*poffset]; \
+        *poffset += sprintf(&pbuf[*poffset], "%s", #key ); \
+        *poffset += 1; \
+        *val_array = &pbuf[*poffset]; \
+        *poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%s", val); \
+        *poffset += 1; \
+    } while(0);
 
 #define key_val_str(pbuf, poffset, pKey, key, key_array, val_array) \
-	do { \
-		*key_array = &pbuf[*poffset]; \
-        	*poffset += sprintf(&pbuf[*poffset], "%s.%s", #pKey, #key ); \
-		*poffset += 1; \
-		*val_array = &pbuf[*poffset]; \
-        	*poffset += snprintf(&pbuf[*poffset], MAX_LINE, "%s", (pKey)->key); \
-		*poffset += 1; \
-	} while(0);	
+    do { \
+        *key_array = &pbuf[*poffset]; \
+        *poffset += sprintf(&pbuf[*poffset], "%s", lldp_to_tlv_get(pKey, key) ); \
+        *poffset += 1; \
+        *val_array = &pbuf[*poffset]; \
+        *poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%s", (pKey)->key); \
+        *poffset += 1; \
+    } while(0);
 
-#define key_val_int(pbuf, poffset, pKey, key, key_array, val_array) \
-	do { \
-		*key_array = &pbuf[*poffset]; \
-        	*poffset += sprintf(&pbuf[*poffset], "%s.%s", #pKey, #key ); \
-		*poffset += 1; \
-		*val_array = &pbuf[*poffset]; \
-        	*poffset += snprintf(&pbuf[*poffset], MAX_LINE, "%d", (pKey)->key); \
-		*poffset += 1; \
-	} while(0);	
+#define key_val_int(pbuf, poffset, pKey, key, val, key_array, val_array) \
+    do { \
+        *key_array = &pbuf[*poffset]; \
+        *poffset += sprintf(&pbuf[*poffset], "%s", lldp_to_tlv_get(pKey, key) ); \
+        *poffset += 1; \
+        *val_array = &pbuf[*poffset]; \
+        if (val != NULL) { \
+            *poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%s", val); \
+        } else { \
+            *poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%d", (pKey)->key); \
+        } \
+        *poffset += 1; \
+        } while(0);
 
 #define key_val_double(pbuf, poffset, pKey, key, key_array, val_array) \
-	do { \
-		*key_array = &pbuf[*poffset]; \
-        	*poffset += sprintf(&pbuf[*poffset], "%s.%s", #pKey, #key ); \
-		*poffset += 1; \
-		*val_array = &pbuf[*poffset]; \
-        	*poffset += snprintf(&pbuf[*poffset], MAX_LINE, "%llx", (long long)(pKey)->key); \
-		*poffset += 1; \
-	} while(0);	
+    do { \
+        *key_array = &pbuf[*poffset]; \
+        *poffset += sprintf(&pbuf[*poffset], "%s", lldp_to_tlv_get(pKey, key) ); \
+        *poffset += 1; \
+        *val_array = &pbuf[*poffset]; \
+        *poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%llx", (long long)(pKey)->key); \
+        *poffset += 1; \
+    } while(0);
 
-#define KEY_VAL_STR_BUF_MAX 2048 
-#define KEY_VAL_MAX 64 
 
 int smap_list_set(char *svec, int *vec_cur, char *val)
 {
@@ -1476,39 +2412,21 @@ void lldp_create_vlan_list(char **vlan_list, struct lldpd_port *p_nbr)
 {
     int offset_f0 = 0;
     int offset_f1 = 0;
-    char vid_str[10];
+    char vid_str[16];
     struct lldpd_vlan *vlan;
 
     TAILQ_FOREACH(vlan, &p_nbr->p_vlans, v_entries) {
-        VLOG_INFO("lldp_create_vlan_list offset %d vlan %p", offset_f0, vlan);
-        VLOG_INFO("lldp_create_vlan_list name= %s ", vlan->v_name);
         smap_list_set(vlan_list[0], &offset_f0, vlan->v_name);
         sprintf(vid_str, "%d", vlan->v_vid);
         smap_list_set(vlan_list[1], &offset_f1, vid_str);
     }
 }
 
-void lldp_fetch_vlan_list(char **vlan_list, struct lldpd_port *p_nbr)
-{
-    int offset_f0 = 0;
-    int offset_f1 = 0;
-    char vid_str[132];
-    struct lldpd_vlan *vlan;
-
-    TAILQ_FOREACH(vlan, &p_nbr->p_vlans, v_entries) {
-        smap_list_get_next(vlan_list[0], &offset_f0, vid_str);
-        vlan->v_name = strdup(vid_str);
-        smap_list_get_next(vlan_list[1], &offset_f1, vid_str);
-        vlan->v_vid = atoi(vid_str);
-    }
-}
-
-
 void lldp_create_pi_list(char **pi_list, struct lldpd_port *p_nbr)
 {
     int offset_f0 = 0;
     int offset_f1 = 0;
-    char vid_str[10];
+    char vid_str[16];
     struct lldpd_pi *p_pi;
 
     TAILQ_FOREACH(p_pi, &p_nbr->p_pids, p_entries) {
@@ -1522,7 +2440,7 @@ void lldp_fetch_pi_list(char **pi_list, struct lldpd_port *p_nbr)
 {
     int offset_f0 = 0;
     int offset_f1 = 0;
-    char vid_str[132];
+    char vid_str[MAX_DESCR];
     struct lldpd_pi *p_pi;
 
     TAILQ_FOREACH(p_pi, &p_nbr->p_pids, p_entries) {
@@ -1537,7 +2455,7 @@ void lldp_create_ppvid_list(char **ppvids_list, struct lldpd_port *p_nbr)
 {
     int offset_f0 = 0;
     int offset_f1 = 0;
-    char vid_str[10];
+    char vid_str[16];
     struct lldpd_ppvid *p_ppvid;
 
     TAILQ_FOREACH(p_ppvid, &p_nbr->p_ppvids, p_entries) {
@@ -1552,7 +2470,7 @@ void lldp_fetch_ppvid_list(char **ppvids_list, struct lldpd_port *p_nbr)
 {
     int offset_f0 = 0;
     int offset_f1 = 0;
-    char vid_str[132];
+    char vid_str[MAX_DESCR];
     struct lldpd_ppvid *p_ppvid;
 
     TAILQ_FOREACH(p_ppvid, &p_nbr->p_ppvids, p_entries) {
@@ -1564,12 +2482,14 @@ void lldp_fetch_ppvid_list(char **ppvids_list, struct lldpd_port *p_nbr)
 }
 
 /*
- * The update function writes new neighbor information 
+ * The update function writes new neighbor information
  * into OVSDB from lldpd port.
  */
 int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 {
     char *pbuf=NULL;
+    char *decode_str=NULL;
+    char *empty=NULL;
     char *vlan_list[2]={0,0};
     char *ppvids_list[2]={0,0};
     char *pids_list[2]={0,0};
@@ -1578,142 +2498,176 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
     int i;
     char *key_array[KEY_VAL_MAX];
     char *val_array[KEY_VAL_MAX];
+#ifdef ENABLE_DOT3
     struct lldpd_dot3_macphy *p_macphy;
     struct lldpd_dot3_power  *p_power;
+#endif
     struct lldpd_chassis *p_chassis;
 
-    pbuf = malloc(KEY_VAL_STR_BUF_MAX);
-    if (p_nbr == NULL) {
+    pbuf = xcalloc(1, KEY_VAL_STR_BUF_MAX);
+    decode_str = xcalloc(1, STR_BUF_DECODE_MAX);
+    if (p_nbr == NULL || decode_str == NULL) {
         VLOG_ERR("%s NULL port pointer", __FUNCTION__);
         goto cleanup;
     }
 
+#ifdef ENABLE_DOT3
     p_macphy = &p_nbr->p_macphy;
     p_power  = &p_nbr->p_power;
+#endif
 
     p_chassis =p_nbr->p_chassis;
 
     /* Populate chassis key/val */
     if (p_chassis) {
-        key_val_int(pbuf, &offset, p_chassis, c_refcount, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_index, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_protocol, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_id_subtype, &key_array[idx], &val_array[idx++]);
-        key_val_str(pbuf, &offset, p_chassis, c_id, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_id_len, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_chassis, c_refcount, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_chassis, c_index, empty, &key_array[idx], &val_array[idx++]);
+
+        decode_property(decode_str, p_chassis->c_protocol, LLDP_MODE_INDEX);
+        key_val_int(pbuf, &offset, p_chassis, c_protocol, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_property(decode_str, p_chassis->c_id_subtype, LLDP_CHASSISID_SUBTYPE_INDEX);
+        key_val_int(pbuf, &offset, p_chassis, c_id_subtype, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_nw_addr(decode_str, p_chassis->c_id, p_chassis->c_id_len);
+        key_strval_str(pbuf, &offset, chassis_id, decode_str, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_chassis, c_id_len, empty, &key_array[idx], &val_array[idx++]);
         key_val_str(pbuf, &offset, p_chassis, c_name, &key_array[idx], &val_array[idx++]);
         key_val_str(pbuf, &offset, p_chassis, c_descr, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_cap_available, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_cap_enabled, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_chassis, c_ttl, &key_array[idx], &val_array[idx++]);
+
+        decode_features(decode_str, p_chassis->c_cap_available, LLDP_CAP_INDEX);
+        key_val_int(pbuf, &offset, p_chassis, c_cap_available, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_features(decode_str, p_chassis->c_cap_enabled, LLDP_CAP_INDEX);
+        key_val_int(pbuf, &offset, p_chassis, c_cap_enabled, decode_str, &key_array[idx], &val_array[idx++]);
+
+        key_val_int(pbuf, &offset, p_chassis, c_ttl, empty, &key_array[idx], &val_array[idx++]);
     }
 
     /* Populate port key/val */
     key_val_double(pbuf, &offset, p_nbr, p_lastchange, &key_array[idx], &val_array[idx++]);
     key_val_double(pbuf, &offset, p_nbr, p_lastupdate, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_protocol, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_hidden_in, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_hidden_out, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_id_subtype, &key_array[idx], &val_array[idx++]);
-    key_val_str(pbuf, &offset, p_nbr, p_id, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_id_len, &key_array[idx], &val_array[idx++]);
-    key_val_str(pbuf, &offset, p_nbr, p_descr, &key_array[idx], &val_array[idx++]);
-    key_val_int(pbuf, &offset, p_nbr, p_mfs, &key_array[idx], &val_array[idx++]);
 
+    decode_property(decode_str, p_nbr->p_protocol, LLDP_MODE_INDEX);
+    key_val_int(pbuf, &offset, p_nbr, p_protocol, decode_str, &key_array[idx], &val_array[idx++]);
+
+    key_val_int(pbuf, &offset, p_nbr, p_hidden_in, empty, &key_array[idx], &val_array[idx++]);
+    key_val_int(pbuf, &offset, p_nbr, p_hidden_out, empty, &key_array[idx], &val_array[idx++]);
+
+    decode_property(decode_str, p_nbr->p_id_subtype, LLDP_PORTID_SUBTYPE_INDEX);
+    key_val_int(pbuf, &offset, p_nbr, p_id_subtype, decode_str, &key_array[idx], &val_array[idx++]);
+
+    key_val_str(pbuf, &offset, p_nbr, p_id, &key_array[idx], &val_array[idx++]);
+    key_val_int(pbuf, &offset, p_nbr, p_id_len, empty, &key_array[idx], &val_array[idx++]);
+    key_val_str(pbuf, &offset, p_nbr, p_descr, &key_array[idx], &val_array[idx++]);
+
+    key_val_int(pbuf, &offset, p_nbr, p_mfs, empty, &key_array[idx], &val_array[idx++]);
+
+#ifdef ENABLE_DOT3
     /* MAC PHY - DOT3 */
     if (p_macphy) {
-        key_val_int(pbuf, &offset, p_macphy, autoneg_support, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_macphy, autoneg_enabled, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_macphy, autoneg_advertised, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_macphy, mau_type, &key_array[idx], &val_array[idx++]);
+        decode_features(decode_str, p_macphy->autoneg_support, LLDP_DOT3_LINK_AUTONEG_INDEX);
+        key_val_int(pbuf, &offset, p_macphy, autoneg_support, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_features(decode_str, p_macphy->autoneg_enabled, LLDP_DOT3_LINK_AUTONEG_INDEX);
+        key_val_int(pbuf, &offset, p_macphy, autoneg_enabled, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_features(decode_str, p_macphy->autoneg_advertised, LLDP_DOT3_LINK_AUTONEG_INDEX);
+        key_val_int(pbuf, &offset, p_macphy, autoneg_advertised, decode_str, &key_array[idx], &val_array[idx++]);
+
+        decode_property(decode_str, p_macphy->mau_type, LLDP_DOT3_MAU_INDEX);
+        key_val_int(pbuf, &offset, p_macphy, mau_type,  decode_str, &key_array[idx], &val_array[idx++]);
     }
 
     /* POWER mgmt - DOT3 */
     if (p_power) {
-        key_val_int(pbuf, &offset, p_power, devicetype, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, supported, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, enabled, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, paircontrol, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, pairs, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, class, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, powertype, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, source, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, priority, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, requested, &key_array[idx], &val_array[idx++]);
-        key_val_int(pbuf, &offset, p_power, allocated, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, devicetype, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, supported, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, enabled, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, paircontrol, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, pairs, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, class, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, powertype, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, source, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, priority, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, requested, empty, &key_array[idx], &val_array[idx++]);
+        key_val_int(pbuf, &offset, p_power, allocated, empty, &key_array[idx], &val_array[idx++]);
     }
+#endif
 
     /* vlans */
-    key_val_int(pbuf, &offset, p_nbr, p_pvid, &key_array[idx], &val_array[idx++]);
+    key_val_int(pbuf, &offset, p_nbr, p_pvid, empty, &key_array[idx], &val_array[idx++]);
 
-
-#define VLAN_LIST_STR_MAX (4096 * 160)
-#define VLAN_LIST_INT_MAX (4096 * 10)
 
 #ifdef ENABLE_DOT1
-    VLOG_INFO("802.1q vlan support enabled");
     if (!TAILQ_EMPTY(&p_nbr->p_vlans)) {
-        vlan_list[0] = malloc(VLAN_LIST_STR_MAX); 
-        vlan_list[1] = malloc(VLAN_LIST_INT_MAX);
+        vlan_list[0] = xcalloc(1, VLAN_LIST_STR_MAX);
+        vlan_list[1] = xcalloc(1, VLAN_LIST_INT_MAX);
         if (!vlan_list[0] || !vlan_list[1]) {
             VLOG_ERR("Error allocating vlan_list");
             goto cleanup;
         }
-	lldp_create_vlan_list(vlan_list, p_nbr);
+        lldp_create_vlan_list(vlan_list, p_nbr);
         key_strval_str(pbuf, &offset, vlan_list_name, vlan_list[0], &key_array[idx], &val_array[idx++]);
         key_strval_str(pbuf, &offset, vlan_list_id,   vlan_list[1], &key_array[idx], &val_array[idx++]);
     }
-    lldp_fetch_vlan_list(vlan_list, p_nbr); 
 
     if (!TAILQ_EMPTY(&p_nbr->p_ppvids)) {
-        ppvids_list[0] = malloc(VLAN_LIST_INT_MAX);
-        ppvids_list[1] = malloc(VLAN_LIST_INT_MAX);
+        ppvids_list[0] = xcalloc(1, VLAN_LIST_INT_MAX);
+        ppvids_list[1] = xcalloc(1, VLAN_LIST_INT_MAX);
         if (!ppvids_list[0] || !ppvids_list[1]) {
             VLOG_ERR("Error allocating ppvids_list");
             goto cleanup;
         }
-	lldp_create_ppvid_list(ppvids_list, p_nbr);
+        lldp_create_ppvid_list(ppvids_list, p_nbr);
         key_strval_str(pbuf, &offset, ppvids_list_cap,   ppvids_list[0], &key_array[idx], &val_array[idx++]);
         key_strval_str(pbuf, &offset, ppvids_list_ppvid, ppvids_list[1], &key_array[idx], &val_array[idx++]);
     }
 
     if (!TAILQ_EMPTY(&p_nbr->p_pids)) {
-        pids_list[0] = malloc(VLAN_LIST_STR_MAX);
-        pids_list[1] = malloc(VLAN_LIST_INT_MAX);
+        pids_list[0] = xcalloc(1, VLAN_LIST_STR_MAX);
+        pids_list[1] = xcalloc(1, VLAN_LIST_INT_MAX);
         if (!pids_list[0] || !pids_list[1]) {
             VLOG_ERR("Error allocating pids_list");
             goto cleanup;
         }
-	lldp_create_pi_list(pids_list, p_nbr);
+        lldp_create_pi_list(pids_list, p_nbr);
         key_strval_str(pbuf, &offset, pids_list_name, pids_list[0], &key_array[idx], &val_array[idx++]);
         key_strval_str(pbuf, &offset, pids_list_len,  pids_list[1], &key_array[idx], &val_array[idx++]);
     }
 #endif
 
     /* debug - print key/val arrays */
+#ifdef LLDP_NBR_DEBUG
     VLOG_INFO("log: key_array[] val_array[]");
     for (i=0; i < idx; i++) {
         VLOG_INFO("%s - %s \n", key_array[i], val_array[i]);
     }
-
     VLOG_INFO("buffer offset %d\n", offset);
+#endif
 
-    /* 
+
+    /*
      *  Invoke smap_set to save in OVSDB
      */
 
     smap_init(smap);
     for (i=0; i < idx; i++) {
-        smap_add(smap, key_array[i], val_array[i]);
+        struct smap_node *node;
+        node = smap_add(smap, key_array[i], val_array[i]);
+        if (node == NULL) {
+            VLOG_ERR("Failed to add key=%s, val=%s", key_array[i], val_array[i]);
+            goto cleanup;
+        }
     }
 
 cleanup:
 
     if (vlan_list[0]) {
-	free(vlan_list[0]);
+       free(vlan_list[0]);
     }
     if (vlan_list[1]) {
-	free(vlan_list[1]);
+       free(vlan_list[1]);
     }
     if (ppvids_list[0]) {
         free(ppvids_list[0]);
@@ -1730,185 +2684,9 @@ cleanup:
     if (pbuf) {
         free(pbuf);
     }
-
-    return 0;
-}
-
-/*
- * The restore function construct lldpd port from smap
- * It's not currently used, except for debugging.
- */
-int lldp_nbr_restore_key_val_smap(void *smap, struct lldpd_port *p_nbr)
-{
-    const char *val;
-    struct lldpd_dot3_macphy *p_macphy;
-    struct lldpd_dot3_power  *p_power;
-    struct lldpd_chassis *p_chassis;
-    p_nbr = (struct lldpd_port *) malloc(sizeof (struct lldpd_port));
-
-    p_macphy = &p_nbr->p_macphy;
-    p_power  = &p_nbr->p_power;
-    p_nbr->p_chassis = (struct lldpd_chassis *)malloc(sizeof (struct lldpd_chassis));
-    p_chassis = p_nbr->p_chassis;
-
-    val = smap_get(smap, "p_chassis.c_refcount");
-    if (val != NULL) {
-        p_chassis->c_refcount = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_index");
-    if (val != NULL) {
-        p_chassis->c_index = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_protocol");
-    if (val != NULL) {
-        p_chassis->c_protocol = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_id_subtype");
-    if (val != NULL) {
-        p_chassis->c_id_subtype = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_id");
-    if (val != NULL) {
-        p_chassis->c_id = strdup(val);
-    }
-    val = smap_get(smap, "p_chassis.c_id_len");
-    if (val != NULL) {
-        p_chassis->c_id_len = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_name");
-    if (val != NULL) {
-        p_chassis->c_name = strdup(val);
-    }
-    val = smap_get(smap, "p_chassis.c_descr");
-    if (val != NULL) {
-        p_chassis->c_descr = strdup(val);
-    }
-    val = smap_get(smap, "p_chassis.c_cap_available");
-    if (val != NULL) {
-        p_chassis->c_cap_available = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_cap_enabled");
-    if (val != NULL) {
-        p_chassis->c_cap_enabled = atoi(val);
-    }
-    val = smap_get(smap, "p_chassis.c_ttl");
-    if (val != NULL) {
-        p_chassis->c_ttl = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_lastchange");
-    if (val != NULL) {
-        p_nbr->p_lastchange = (time_t) strtoll(val, 0, 10);
-    }
-    val = smap_get(smap, "p_nbr.p_lastupdate");
-    if (val != NULL) {
-        p_nbr->p_lastupdate = (time_t) strtoll(val, 0, 10);
-    }
-    val = smap_get(smap, "p_nbr.p_protocol");
-    if (val != NULL) {
-        p_nbr->p_protocol = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_hidden_in");
-    if (val != NULL) {
-        p_nbr->p_hidden_in = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_hidden_out");
-    if (val != NULL) {
-        p_nbr->p_hidden_out = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_id_subtype");
-    if (val != NULL) {
-        p_nbr->p_id_subtype = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_id");
-    if (val != NULL) {
-        p_nbr->p_id = strdup(val);
-    }
-    val = smap_get(smap, "p_nbr.p_id_len");
-    if (val != NULL) {
-        p_nbr->p_id_len = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_descr");
-    if (val != NULL) {
-        p_nbr->p_descr = strdup(val);
-    }
-    val = smap_get(smap, "p_nbr.p_mfs");
-    if (val != NULL) {
-        p_nbr->p_mfs = atoi(val);
-    }
-    val = smap_get(smap, "p_macphy.autoneg_support");
-    if (val != NULL) {
-        p_macphy->autoneg_support = atoi(val);
-    }
-    val = smap_get(smap, "p_macphy.autoneg_enabled");
-    if (val != NULL) {
-        p_macphy->autoneg_enabled = atoi(val);
-    }
-    val = smap_get(smap, "p_macphy.autoneg_advertised");
-    if (val != NULL) {
-        p_macphy->autoneg_advertised = atoi(val);
-    }
-    val = smap_get(smap, "p_macphy.mau_type");
-    if (val != NULL) {
-        p_macphy->mau_type = atoi(val);
-    }
-    val = smap_get(smap, "p_power.devicetype");
-    if (val != NULL) {
-        p_power->devicetype = atoi(val);
-    }
-    val = smap_get(smap, "p_power.supported");
-    if (val != NULL) {
-        p_power->supported = atoi(val);
-    }
-    val = smap_get(smap, "p_power.enabled");
-    if (val != NULL) {
-        p_power->enabled = atoi(val);
-    }
-    val = smap_get(smap, "p_power.paircontrol");
-    if (val != NULL) {
-        p_power->paircontrol = atoi(val);
-    }
-    val = smap_get(smap, "p_power.pairs");
-    if (val != NULL) {
-        p_power->pairs = atoi(val);
-    }
-    val = smap_get(smap, "p_power.class");
-    if (val != NULL) {
-        p_power->class = atoi(val);
-    }
-    val = smap_get(smap, "p_power.powertype");
-    if (val != NULL) {
-        p_power->powertype = atoi(val);
-    }
-    val = smap_get(smap, "p_power.source");
-    if (val != NULL) {
-        p_power->source = atoi(val);
-    }
-    val = smap_get(smap, "p_power.priority");
-    if (val != NULL) {
-        p_power->priority = atoi(val);
-    }
-    val = smap_get(smap, "p_power.requested");
-    if (val != NULL) {
-        p_power->requested = atoi(val);
-    }
-    val = smap_get(smap, "p_power.allocated");
-    if (val != NULL) {
-        p_power->allocated = atoi(val);
-    }
-    val = smap_get(smap, "p_nbr.p_pvid");
-    if (val != NULL) {
-        p_nbr->p_pvid = atoi(val);
-    }
-    val = smap_get(smap, "nbr_vlan_list");
-    if (val != NULL) {
-    }
-    val = smap_get(smap, "nbr_ppvids_list");
-    if (val != NULL) {
-    }
-    val = smap_get(smap, "nbr_pids_list");
-    if (val != NULL) {
+    if (decode_str) {
+        free(decode_str);
     }
 
     return 0;
 }
-

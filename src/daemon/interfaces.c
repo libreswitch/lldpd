@@ -186,6 +186,7 @@ interfaces_helper_whitelist(struct lldpd *cfg,
 }
 
 #ifdef ENABLE_DOT1
+#ifndef ENABLE_OVSDB
 static void
 iface_append_vlan(struct lldpd *cfg,
     struct interfaces_device *vlan,
@@ -269,6 +270,7 @@ iface_append_vlan_to_lower(struct lldpd *cfg,
 		    interfaces, vlan, lower);
 	}
 }
+#endif
 
 void
 interfaces_helper_vlan(struct lldpd *cfg,
@@ -277,6 +279,9 @@ interfaces_helper_vlan(struct lldpd *cfg,
 	struct interfaces_device *iface;
 
 	TAILQ_FOREACH(iface, interfaces, next) {
+#ifdef ENABLE_OVSDB
+		add_vlans_from_ovsdb(iface->name);
+#else
 		if (!iface->flags)
 			continue;
 		if (!(iface->type & IFACE_VLAN_T))
@@ -288,7 +293,9 @@ interfaces_helper_vlan(struct lldpd *cfg,
 		    iface->name);
 		iface_append_vlan_to_lower(cfg, interfaces,
 		    iface, iface);
+#endif
 	}
+
 }
 #endif
 
@@ -302,6 +309,7 @@ interfaces_helper_chassis(struct lldpd *cfg,
 	struct lldpd_hardware *hardware;
 	char *name = NULL;
 
+#ifndef ENABLE_OVSDB
 	LOCAL_CHASSIS(cfg)->c_cap_enabled &=
 			    ~(LLDP_CAP_BRIDGE | LLDP_CAP_WLAN | LLDP_CAP_STATION);
 	TAILQ_FOREACH(iface, interfaces, next) {
@@ -313,6 +321,7 @@ interfaces_helper_chassis(struct lldpd *cfg,
 	if ((LOCAL_CHASSIS(cfg)->c_cap_available & LLDP_CAP_STATION) &&
 		(LOCAL_CHASSIS(cfg)->c_cap_enabled == 0))
 	    LOCAL_CHASSIS(cfg)->c_cap_enabled = LLDP_CAP_STATION;
+#endif
 
 	if (LOCAL_CHASSIS(cfg)->c_id != NULL &&
 	    LOCAL_CHASSIS(cfg)->c_id_subtype == LLDP_CHASSISID_SUBTYPE_LLADDR)
@@ -366,14 +375,23 @@ void
 interfaces_helper_mgmt(struct lldpd *cfg,
     struct interfaces_address_list *addrs)
 {
+/*
+ * When OVSDB is enabled we will not pick management address
+ * from kernel interfaces
+ * HALON TODO: When OVSDB is enabled management address needs
+ * to come from ovsdb. This needs to be designed in schema
+ */
+#ifndef ENABLE_OVSDB
 	struct interfaces_address *addr;
 	char addrstrbuf[INET6_ADDRSTRLEN];
 	struct lldpd_mgmt *mgmt;
 	void *sin_addr_ptr;
 	size_t sin_addr_size;
-	int af;
 	int allnegative = 0;
-
+	int af;
+#else
+	int af;
+#endif
     const char *pattern = cfg->g_config.c_mgmt_pattern;
 
     lldpd_chassis_mgmt_cleanup(LOCAL_CHASSIS(cfg));
@@ -409,6 +427,7 @@ interfaces_helper_mgmt(struct lldpd *cfg,
                return;
            }
 
+#ifndef ENABLE_OVSDB
     /* Is the pattern provided all negative? */
 	if (pattern == NULL) allnegative = 1;
 	else if (pattern[0] == '!') {
@@ -419,7 +438,6 @@ interfaces_helper_mgmt(struct lldpd *cfg,
 		       (*(++sep) == '!'));
 		if (sep == NULL) allnegative = 1;
 	}
-
 	/* Find management addresses */
 	for (af = LLDPD_AF_UNSPEC + 1; af != LLDPD_AF_LAST; af++) {
 		/* We only take one of each address family, unless a
@@ -470,6 +488,7 @@ interfaces_helper_mgmt(struct lldpd *cfg,
 			}
 		}
 	}
+#endif
 }
 
 /* Fill up port name and description */
