@@ -162,6 +162,8 @@ void decode_features(char *decode_str, uint32_t features, uint32_t category)
     base = lldp_decode_start[category];
     limit = lldp_decode_start[category+1] - lldp_decode_start[category];
 
+    sprintf(decode_str, "%s", " ");
+
     for (n=0, i=0; i < limit; i++) {
         if (features & (1 << i)) {
             if (n == 0) {
@@ -180,7 +182,8 @@ void decode_property(char *decode_str, uint32_t property, uint32_t category)
     int base = lldp_decode_start[category];
     int limit = lldp_decode_start[category+1] - lldp_decode_start[category];
 
-    if (property >= limit) {
+    sprintf(decode_str, "%s",  " ");
+    if ((property >= limit) || (lldp_decode_table[base+property] == NULL)) {
         return;
     }
 
@@ -190,7 +193,7 @@ void decode_property(char *decode_str, uint32_t property, uint32_t category)
 void decode_nw_addr(char *decode_str, char *user_str, int key_len)
 {
     int i, n, size;
-    char c;
+    unsigned char c;
 
     n=0;
     size = strlen(user_str);
@@ -207,6 +210,8 @@ static void
 lldp_ovsdb_setup_decode()
 {
     int index = 0;
+
+    memset(lldp_decode_table, 0, sizeof lldp_decode_table);
 
 /* Chassis ID subtype */
     lldp_decode_start[LLDP_CHASSISID_SUBTYPE_INDEX] = index;
