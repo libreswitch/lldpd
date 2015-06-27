@@ -29,7 +29,7 @@ liblldpd_la_SOURCES  = \
 
 if OVSDB_INTEGRATION
 liblldpd_la_SOURCES  += \
-	lldpd_ovsdb_if.c lldpd_ovsdb_if.h
+	lldpd_ovsdb_if.c lldpd_ovsdb_if_test.c lldpd_ovsdb_if.h
 endif
 
 liblldpd_la_CFLAGS   = $(AM_CFLAGS) @LIBEVENT_CFLAGS@
