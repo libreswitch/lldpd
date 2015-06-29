@@ -1,3 +1,27 @@
+
+License
+-------
+
+lldpd is distributed under the ISC license:
+
+ > Permission to use, copy, modify, and/or distribute this software for any
+ > purpose with or without fee is hereby granted, provided that the above
+ > copyright notice and this permission notice appear in all copies.
+ >
+ > THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ > WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ > MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ > ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ > WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ > ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ > OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Also, `lldpcli` will be linked to GNU Readline (which is GPL licensed)
+if available. To avoid this, use `--without-readline` as a configure
+option.
+
+=============================================================================
+
 lldpd: implementation of IEEE 802.1ab (LLDP)
 ============================================
 
@@ -233,6 +257,14 @@ To embed lldpd into an existing system, there are two point of entries:
     should always be shipped with `lldpd`. On the other hand, programs
     using `liblldpctl.so` can rely on the classic ABI rules.
 
+Why there are 2 similar sounding test & tests directories
+---------------------------------------------------------
+One may ask why there are two similar named directories here.
+"tests" is the original testing directory that has always been
+there.  The "test" directory has been created to run the
+enterprise halon automated tests, since that specific infrastructure
+requires the directory name to be precisely "test".
+
 Troubleshooting
 ---------------
 
@@ -241,23 +273,3 @@ You can use `tcpdump` to look after the packets received and send by
 
     tcpdump -s0 -vv -pni eth0 ether dst 01:80:c2:00:00:0e
 
-License
--------
-
-lldpd is distributed under the ISC license:
-
- > Permission to use, copy, modify, and/or distribute this software for any
- > purpose with or without fee is hereby granted, provided that the above
- > copyright notice and this permission notice appear in all copies.
- >
- > THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- > WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- > MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- > ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- > WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- > ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- > OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-Also, `lldpcli` will be linked to GNU Readline (which is GPL licensed)
-if available. To avoid this, use `--without-readline` as a configure
-option.
