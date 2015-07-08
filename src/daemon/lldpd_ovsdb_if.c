@@ -106,6 +106,7 @@ static char * vlan_name_lookup_by_vid(int64_t vid);
 /**************************************************************************//**
  * interface_date struct that contains interface table information for an interface.
  *****************************************************************************/
+
 struct interface_data {
     char     *name;               /* Always nonnull. */
     int native_vid;               /* "tag" column - native VLAN ID. */
@@ -118,6 +119,7 @@ struct interface_data {
 /**************************************************************************//**
  * port_data struct that contains PORT table information for a single port.
  *****************************************************************************/
+
 struct port_data {
     char *name;
     enum ovsrec_port_vlan_mode_e vlan_mode;  /* "vlan_mode" column. */
@@ -148,9 +150,10 @@ uint32_t lldp_decode_start[LLDP_INDEX_MAX+1];
 
 #define lldp_to_tlv_get(func, field) lldp_ovsdb_map[ func ## _ ## field ]
 
-/**********************************************************************/
-/*                   LLDP Neighbor decode Functions                   */
-/**********************************************************************/
+/**************************************************************************//**
+ * LLDP Neighbor decode Functions
+ *****************************************************************************/
+
 inline int bit_set(uint32_t n)
 {
     uint32_t l=0;
@@ -462,10 +465,10 @@ lldp_ovsdb_setup_decode()
 
 }
 
+/**************************************************************************//**
+ * LLDP Helper Functions
+ *****************************************************************************/
 
-/**********************************************************************/
-/*                   LLDP Helper Functions                            */
-/**********************************************************************/
 static void lldpd_reset(struct lldpd *cfg, struct lldpd_hardware *hw)
 {
     /* If hw is NULL we will reset all hw else reset only specific hw */
@@ -514,9 +517,10 @@ static bool validate_ip(char *ip)
     return false;
 } /* validate_ip */
 
-/**********************************************************************/
-/*                         Interface                                  */
-/**********************************************************************/
+/**************************************************************************//**
+ * Interface management functions
+ *****************************************************************************/
+
 static void
 del_old_db_interface(struct shash_node *sh_node)
 {
@@ -707,9 +711,10 @@ static void lldpd_apply_interface_changes(struct ovsdb_idl *idl,
         *send_now = 1;
 } /* lldpd_apply_interface_changes */
 
-/**********************************************************************/
-/*                         Bridge                                     */
-/**********************************************************************/
+/**************************************************************************//**
+ * Bridge management functions
+ *****************************************************************************/
+
 static void lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
         struct lldpd *g_lldp_cfg, bool *send_now)
 {
@@ -749,9 +754,10 @@ static void lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
     }
 } /* lldpd_apply_bridge_changes */
 
-/**********************************************************************/
-/*                         VRF                                        */
-/**********************************************************************/
+/**************************************************************************//**
+ * VRF management functions
+ *****************************************************************************/
+
 static void lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
         struct lldpd *g_lldp_cfg, bool *send_now)
 {
@@ -787,9 +793,9 @@ static void lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
     }
 } /* lldpd_apply_vrf_changes */
 
-/**********************************************************************/
-/*                        Port/VLAN                                   */
-/**********************************************************************/
+/**************************************************************************//**
+ * Port/Vlan management functions
+ *****************************************************************************/
 
 static void
 set_lldp_vlan_name_tlv(int64_t vlan, struct lldpd_hardware *hw) {
@@ -1098,9 +1104,10 @@ vlan_name_lookup_by_vid(int64_t vid)
 
 } /* vlan_name_lookup_by_vid */
 
-/**********************************************************************/
-/*                         Open_vSwitch                               */
-/**********************************************************************/
+/**************************************************************************//**
+ * Configuration management functions
+ *****************************************************************************/
+
 static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
         struct lldpd *g_lldp_cfg, bool *send_now)
 {
@@ -1272,18 +1279,19 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
     return;
 } /* lldpd_apply_global_changes */
 
-/**********************************************************************/
-/*                OVS poll loop to libevent                           */
-/**********************************************************************/
-u_int64_t ovs_libevent_get_counter(void)
+/**************************************************************************//**
+ * Ovs db poll to libevent & vice versa management functions
+ *****************************************************************************/
+
+u_int64_t ovs_libevent_get_counter (void)
 {
     VLOG_INFO("ovs_libevent_get_counter");
     return libevent_cnt;
 }
-void *ovs_libevent_get_arg(void)
+
+void *ovs_libevent_get_arg (void)
 {
     return libevent_cb_arg;
-
 }
 
 void ovs_libevent_schedule_nbr(void *arg){
@@ -1405,13 +1413,9 @@ void init_ovspoll_to_libevent(struct lldpd *cfg){
     return;
 } /* init_ovspoll_to_libevent */
 
-/******************************************************************************
-*******************************************************************************
-**
-** START OF lldp statistics/counters reporting section
-**
-*******************************************************************************
-******************************************************************************/
+/**************************************************************************//**
+ * global & per interface statistics/counter management functions
+ *****************************************************************************/
 
 /* timer working variables */
 static u_int64_t lldpd_stats_last_check_time = 0;
@@ -1662,13 +1666,9 @@ lldpd_stats_run (struct lldpd *cfg)
     poll_timer_wait(lldpd_stats_check_interval);
 }
 
-/******************************************************************************
-*******************************************************************************
-**
-** END OF lldp statistics/counters reporting section
-**
-*******************************************************************************
-******************************************************************************/
+/**************************************************************************//**
+ * overall ovsdb loop functions
+ *****************************************************************************/
 
 static bool
 lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
@@ -1783,7 +1783,6 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
     return nbr_change;
 }
 
-
 static void
 lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 {
@@ -1820,10 +1819,6 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 
     return;
 }
-
-/**********************************************************************/
-/*                         OVSDB                                      */
-/**********************************************************************/
 
 static void
 lldpd_reconfigure(struct ovsdb_idl *idl,struct lldpd *g_lldp_cfg)
@@ -1935,6 +1930,9 @@ static inline void lldpd_chk_for_system_configured(void)
 
 } /* lldpd_chk_for_system_configured */
 
+/**************************************************************************//**
+ * poll/run/timer functions
+ *****************************************************************************/
 
 static bool confirm_txn_try_again = false;
 
