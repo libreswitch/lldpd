@@ -80,6 +80,8 @@ static unsigned int idl_seqno;
 static struct event *timeout_event;
 static struct event *nbr_event;
 static int system_configured = false;
+static int64_t libevent_cnt = 0;
+static void *libevent_cb_arg = NULL;
 
 static void ovs_libevent_cb(evutil_socket_t fd, short what, void *arg);
 static void ovs_clear_libevents(void);
@@ -92,6 +94,11 @@ static char *appctl_path = NULL;
 static struct unixctl_server *appctl;
 static unixctl_cb_func lldpd_unixctl_dump;
 static unixctl_cb_func halon_lldpd_exit;
+
+unixctl_cb_func lldpd_unixctl_test;
+void lldpd_unixctl_test(struct unixctl_conn *conn, int argc,
+       const char *argv[], void *aux OVS_UNUSED);
+
 bool exiting = false;
 
 static char * vlan_name_lookup_by_vid(int64_t vid);
@@ -1268,11 +1275,22 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
 /**********************************************************************/
 /*                OVS poll loop to libevent                           */
 /**********************************************************************/
+u_int64_t ovs_libevent_get_counter(void)
+{
+    VLOG_INFO("ovs_libevent_get_counter");
+    return libevent_cnt;
+}
+void *ovs_libevent_get_arg(void)
+{
+    return libevent_cb_arg;
+
+}
+
 void ovs_libevent_schedule_nbr(void *arg){
     struct lldpd *cfg = arg;
 
     nbr_event = event_new(cfg->g_base, -1, 0, ovs_libevent_cb, cfg);
-    event_active(timeout_event, EV_TIMEOUT, 1);
+    event_active(nbr_event, EV_TIMEOUT, 1);
 
     return;
 }
@@ -1307,6 +1325,9 @@ static void ovs_libevent_cb(evutil_socket_t fd, short what, void *arg){
     struct lldpd *cfg = arg;
     int retval = 0;
     struct timeval tv;
+
+    libevent_cnt++;
+    libevent_cb_arg = arg;
 
     ovs_clear_libevents();
 
@@ -2042,6 +2063,9 @@ ovsdb_init(const char *db_path)
 
     /* Register ovs-appctl commands for this daemon. */
     unixctl_command_register("lldpd/dump", "", 0, 0, lldpd_unixctl_dump, NULL);
+    unixctl_command_register("lldpd/test",
+                              "libevent|ovsdb <test case no>",
+                              2, 2, lldpd_unixctl_test, NULL);
 } /* ovsdb_init */
 
 static void
