@@ -61,41 +61,34 @@ class lldpTest (HalonTest):
                                        sopts = self.getSwitchOpts()),
                                        switch = HalonSwitch,
                                        host = HalonHost,
-                                       link = HalonLink, 
-				       controller = None,
+                                       link = HalonLink,
+                                       controller = None,
                                        build = True)
 
     def switch_variable (self, switch_number):
-	if (switch_number == 1):
-	    return self.net.switches[0]
-	else:
-	    return self.net.switches[1]
+        if (switch_number == 1):
+            return self.net.switches[0]
+        else:
+            return self.net.switches[1]
 
     def configure_lldp (self, switch_number):
-	info("\n")
-	info("enabling lldp globally for switch %d\n" % switch_number)
-	s = self.switch_variable(switch_number)
-	if (switch_number == 1):
-	    self.pid1 = s.cmd("pidof lldpd").strip()
-	    if (self.pid1 == ""):
-		assert 0, "lldp process not running on switch " + \
-			  str(switch_number)
-	    else:
-		info("lldp process id on switch " + \
-		      str(switch_number) + \
-		      " is " + \
-                      str(self.pid1) + "\n")
-	else:
-	    self.pid2 = s.cmd("pidof lldpd").strip()
-	    if (self.pid2 == ""):
-		assert 0, "lldp process not running on switch " + \
-			  str(switch_number)
-	    else:
-		info("lldp process id on switch " + \
-		      str(switch_number) + \
+        info("\n")
+        info("enabling lldp globally for switch %d\n" % switch_number)
+        s = self.switch_variable(switch_number)
+        if (switch_number == 1):
+            self.pid1 = s.cmd("pidof lldpd").strip()
+            if (self.pid1 == ""):
+                assert 0, "lldp process not running on switch " + \
+                          str(switch_number)
+            else:
+                info("lldp process id on switch " + \
+                      str(switch_number) + \
                       " is " + \
-                      str(self.pid2) + "\n")
-	uuid = s.cmd("ovs-vsctl list open_vswitch | grep _uuid | " + \
+                      str(self.pid1) + "\n")
+        else:
+            assert 0, "Invalid switch " + \
+                           str(switch_number)
+        uuid = s.cmd("ovs-vsctl list open_vswitch | grep _uuid | " + \
                      "awk '{print $3}'").strip()
         s.cmd("ovs-vsctl set open_vswitch %s " \
               "other_config:lldp_enable=true " \
@@ -103,24 +96,24 @@ class lldpTest (HalonTest):
         time.sleep(1)
         out = s.cmd("ovs-vsctl list open_vswitch | grep other_config")
         if ('lldp_enable="true"' not in out):
-	    assert 0, "lldp not enabled on switch " + str(switch_number)
-	info("lldp configured correctly on switch %d\n" %switch_number)
+            assert 0, "lldp not enabled on switch " + str(switch_number)
+        info("lldp configured correctly on switch %d\n" %switch_number)
 
 
-    #  
-    # Trigger a burst of events via ovs-appctl and make sure 
-    # it arrived by checking event counter 
-    # 
+    #
+    # Trigger a burst of events via ovs-appctl and make sure
+    # it arrived by checking event counter
+    #
     def lldp_libevent (self, switch_number):
-	s = self.switch_variable(switch_number)
-	out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 0")
-	if ("OK" not in out):
-	    info("switch %d libevent test init FAILED: %s\n" % (switch_number, out))
-	    assert 0, "********* TEST FAILED *********"
-	out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 1").strip()
-	if ("OK" not in out):
-	    info("switch %d libevent test FAILED: %s\n" % (switch_number, out))
-	    assert 0, "********* TEST FAILED *********"
+        s = self.switch_variable(switch_number)
+        out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 0")
+        if ("OK" not in out):
+            info("switch %d libevent test init FAILED: %s\n" % (switch_number, out))
+            assert 0, "********* TEST FAILED *********"
+        out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 1").strip()
+        if ("OK" not in out):
+           info("switch %d libevent test FAILED: %s\n" % (switch_number, out))
+           assert 0, "********* TEST FAILED *********"
         else:
             info("switch %d libevent test PASSED\n" % (switch_number))
 
@@ -156,6 +149,6 @@ class Test_lldp:
 
     # the actual test function
     def test_lldp_full (self):
-	self.test_var.configure_lldp(1);
-	self.test_var.lldp_libevent(1);
+        self.test_var.configure_lldp(1);
+        self.test_var.lldp_libevent(1);
         # CLI(self.test_var.net)
