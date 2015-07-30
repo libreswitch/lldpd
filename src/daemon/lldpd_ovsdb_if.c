@@ -771,7 +771,7 @@ static void lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
     if(vrf && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(vrf, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(vrf, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(vrf, idl_seqno)) {
-        VLOG_INFO("No VRF cfg changes");
+        VLOG_DBG("No VRF cfg changes");
         return;
     }
 
@@ -1454,9 +1454,9 @@ static char *lldp_interface_statistics_keys [] = {
 #define SYNC_COUNTER_FROM_DB(KEY, HW_COUNTER) \
     { \
         int64_t db_value = 0; \
-        (void) ovsdb_datum_get_int64_value_given_string_key(datum, KEY, &db_value); \
+        (void) ovsdb_datum_get_int64_value_given_string_key((struct ovsdb_datum *)datum, KEY, &db_value); \
         dual_itf->hw->HW_COUNTER += db_value; \
-        VLOG_DBG("%s counter %s restored to %llu", \
+        VLOG_DBG("%s counter %s restored to %ld", \
             dual_itf->name, KEY, db_value); \
     }
 
@@ -1469,8 +1469,7 @@ static char *lldp_interface_statistics_keys [] = {
 static void
 sync_lldp_counters_from_db (struct interface_data *dual_itf)
 {
-    struct ovsdb_datum *datum;
-    struct lldpd_hardware *hw;
+    const struct ovsdb_datum *datum;
 
     VLOG_DBG("entered sync_lldp_counters_from_db for %s",
         dual_itf->name);
@@ -1505,7 +1504,7 @@ lldp_process_one_interface_counters (struct interface_data *dual_itf)
     int total = 0;
     int64_t values [LLDPD_TOTAL_STATS_PER_INTERFACE];
     struct lldpd_hardware *hardware = dual_itf->hw;
-    struct ovsrec_interface *ifrow = dual_itf->ifrow;
+    struct ovsrec_interface *ifrow = (struct ovsrec_interface *)dual_itf->ifrow;
 
     /* if either pointer not found, cannot proceed */
     if (!hardware || !ifrow) {
@@ -1598,7 +1597,7 @@ lldp_process_global_counters (struct lldpd *cfg)
         OVSDB_STATISTICS_LLDP_TABLE_DROPS, total_h_drop_cnt,
         OVSDB_STATISTICS_LLDP_TABLE_AGEOUTS, total_h_ageout_cnt);
 
-    row = ovsrec_open_vswitch_first(idl);
+    row = (struct ovsrec_open_vswitch *)ovsrec_open_vswitch_first(idl);
     ovsrec_open_vswitch_set_lldp_statistics(row, &smap);
     smap_destroy(&smap);
 }

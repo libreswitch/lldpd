@@ -29,6 +29,7 @@
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
 #include "coverage.h"
+#include "lldpd_ovsdb_if.h"
 
 extern u_int64_t ovs_libevent_get_counter(void);
 extern void *ovs_libevent_get_arg(void);
@@ -78,7 +79,7 @@ test_ovsdb_libevent_loop(int param, char *return_status)
         libevent_cnt_end = ovs_libevent_get_counter();
         libevent_cnt_total = libevent_cnt_end - libevent_cnt_start;
         if (libevent_cnt_total >= LIBEVENT_TEST_CNT) {
-            VLOG_INFO("libevent unit test done - start=%lld end=%lld",
+            VLOG_INFO("libevent unit test done - start=%lu end=%lu",
                        libevent_cnt_start, libevent_cnt_end);
             sprintf(return_status, "%s", "OK");
         } else {

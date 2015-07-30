@@ -1406,9 +1406,9 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	/* Non privileged user */
 	struct passwd *user;
 	struct group *group;
-#endif
 	uid_t uid;
 	gid_t gid;
+#endif
 
 
 #ifdef ENABLE_OVSDB
@@ -1601,13 +1601,14 @@ lldpd_main(int argc, char *argv[], char *envp[])
 		log_warn("main", "unable to create control socket");
 		fatalx("giving up");
 	}
+#ifdef ENABLE_PRIVSEP
 	if (chown(ctlname, uid, gid) == -1)
 		log_warn("main", "unable to chown control socket");
 	if (chmod(ctlname,
 		S_IRUSR | S_IWUSR | S_IXUSR |
 		S_IRGRP | S_IWGRP | S_IXGRP) == -1)
 		log_warn("main", "unable to chmod control socket");
-
+#endif
 	/* Disable SIGPIPE */
 	signal(SIGPIPE, SIG_IGN);
 
@@ -1650,8 +1651,11 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	}
 
 	log_debug("main", "initialize privilege separation");
+#ifdef ENABLE_PRIVSEP
 	priv_init(PRIVSEP_CHROOT, ctl, uid, gid);
-
+#else
+	priv_init(PRIVSEP_CHROOT, ctl, 0, 0);
+#endif
 	/* Initialization of global configuration */
 	if ((cfg = (struct lldpd *)
 	    calloc(1, sizeof(struct lldpd))) == NULL)
