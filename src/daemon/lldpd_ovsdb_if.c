@@ -89,6 +89,8 @@ static int ovspoll_to_libevent(struct lldpd *cfg);
 static void lldpd_run(struct lldpd *cfg);
 static void lldpd_wait(void);
 static int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr);
+static bool lldpd_ovsdb_clear_all_nbrs_run(struct ovsdb_idl *idl);
+
 
 static char *appctl_path = NULL;
 static struct unixctl_server *appctl;
@@ -1115,6 +1117,8 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
     int i;
     bool update_now = 0;
     const struct ovsrec_open_vswitch *ovs;
+    struct ovsdb_idl_txn *lldp_clear_all_nbr_txn = NULL;
+    bool nbr_change;
 
     ovs = ovsrec_open_vswitch_first(idl);
 
@@ -1244,7 +1248,7 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
         bool is_any_protocol_enabled = false;
         for (i=0; g_lldp_cfg->g_protocols[i].mode != 0; i++) {
             if (g_lldp_cfg->g_protocols[i].mode == LLDPD_MODE_LLDP){
-                if (CHANGED(lldp_enabled, g_lldp_cfg->g_protocols[i].enabled)) {
+                if (CHANGED(lldp_enabled,g_lldp_cfg->g_protocols[i].enabled)) {
                     g_lldp_cfg->g_protocols[i].enabled = lldp_enabled;
                     lldpd_reset(g_lldp_cfg, NULL);
                     lldpd_update_localports(g_lldp_cfg);
@@ -1253,6 +1257,15 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
                     }
                     VLOG_INFO("lldp %s", g_lldp_cfg->g_protocols[i].enabled ?
                               "enabled": "disabled");
+                }
+                if (!lldp_enabled) {
+                    lldp_clear_all_nbr_txn = ovsdb_idl_txn_create(idl);
+                    nbr_change = lldpd_ovsdb_clear_all_nbrs_run(idl);
+                    if (nbr_change) {
+                        ovsdb_idl_txn_commit_block(lldp_clear_all_nbr_txn);
+                    } else {
+                        ovsdb_idl_txn_destroy(lldp_clear_all_nbr_txn);
+                    }
                 }
             }
             if(g_lldp_cfg->g_protocols[i].enabled) {
@@ -1668,6 +1681,25 @@ lldpd_stats_run (struct lldpd *cfg)
 /**************************************************************************//**
  * overall ovsdb loop functions
  *****************************************************************************/
+
+
+/*
+ * Traversing interface table and clearing neighbor data
+ */
+static bool
+lldpd_ovsdb_clear_all_nbrs_run(struct ovsdb_idl *idl)
+{
+    const struct ovsrec_interface *ifrow;
+    bool nbr_change = false;
+
+    /* Scan all hardware interfaces in lldpd and reset nbr data
+     */
+    OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
+        ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
+        nbr_change = true;
+    }
+    return (nbr_change);
+}
 
 static bool
 lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
