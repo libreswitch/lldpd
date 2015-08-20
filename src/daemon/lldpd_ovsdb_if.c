@@ -871,12 +871,13 @@ del_old_port(struct shash_node *sh_node)
 
     if (sh_node) {
         struct port_data *port = sh_node->data;
-        VLOG_INFO("number of interfaces in p[ort = %d", port->n_interfaces);
+        VLOG_INFO("number of interfaces in port = %d", port->n_interfaces);
         /* Clean up lldp hardware vlan info */
         if(port && port->n_interfaces && port->interfaces) {
             for(k=0; k < port->n_interfaces; k++) {
-                struct interface_data *intf;
-                intf = shash_find_data(&all_interfaces, port->interfaces[k]->h_ifname);
+                struct interface_data *intf = NULL;
+                if(port->interfaces[k])
+                    intf = shash_find_data(&all_interfaces, port->interfaces[k]->h_ifname);
                 if(!intf) {
                     continue;
                 }
