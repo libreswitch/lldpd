@@ -15,6 +15,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+"""
 import lib
 import pytest
 import re
@@ -573,3 +574,4 @@ class Test_lldp_configuration:
             assert "Test failed"
         else:
             common.LogOutput('info', "test passed")
+"""
