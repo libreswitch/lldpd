@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <arpa/inet.h>
 
 // OVS headers
 #include "config.h"
@@ -70,10 +71,12 @@ VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
 #define KEY_VAL_STR_BUF_MAX 4096
 #define MAX_DESCR 256
 #define KEY_VAL_MAX 64
+#define MGMT_IF_MAX 16
 #define STR_BUF_DECODE_MAX 1024
 #define DECODE_TABLE_MAX 1024
 #define VLAN_LIST_STR_MAX (4096 * 256)
 #define VLAN_LIST_INT_MAX (4096 * 16)
+#define MGMTIP_LIST_MAX (MGMT_IF_MAX * INET6_ADDRSTRLEN)
 
 static struct ovsdb_idl *idl;
 static unsigned int idl_seqno;
@@ -96,10 +99,12 @@ static char *appctl_path = NULL;
 static struct unixctl_server *appctl;
 static unixctl_cb_func lldpd_unixctl_dump;
 static unixctl_cb_func halon_lldpd_exit;
+static bool g_ovsdb_test_nbr_mgmt_addr_list = false;
 
 unixctl_cb_func lldpd_unixctl_test;
 void lldpd_unixctl_test(struct unixctl_conn *conn, int argc,
        const char *argv[], void *aux OVS_UNUSED);
+void ovsdb_test_nbr_mgmt_addr_list(struct lldpd_chassis *p_chassis);
 
 bool exiting = false;
 
@@ -2445,7 +2450,7 @@ void add_vlans_from_ovsdb(char *hw_name)
 
 int smap_list_set(char *svec, int *vec_cur, char *val)
 {
-    *vec_cur += sprintf(&svec[*vec_cur], "%s,", val);
+    *vec_cur += sprintf(&svec[*vec_cur], "%s%s", *vec_cur?",":"", val);
     return 0;
 }
 
@@ -2465,6 +2470,35 @@ int smap_list_get_next(char *svec, int *vec_cur, char *val)
         *vec_cur=idx+1;
 
     return 0;
+}
+
+void lldp_create_mgmtip_list(char **mgmtip_list, struct lldpd_chassis *p_chassis)
+{
+    int offset_f0 = 0;
+    int offset_f1 = 0;
+    char mgmtip_str[INET6_ADDRSTRLEN];
+    char iface_str[16];
+    int if_cnt = 0;
+    struct lldpd_mgmt *mgmtip;
+
+    TAILQ_FOREACH(mgmtip, &p_chassis->c_mgmt, m_entries) {
+        if (if_cnt++ >= MGMT_IF_MAX) {
+            VLOG_ERR("Too many mgmt IP entries. Increase MGMT_IF_MAX");
+            break;
+        }
+        VLOG_DBG("mgmt entry family= %d ip= %x if= %d",
+                  mgmtip->m_family, mgmtip->m_addr.inet.s_addr, mgmtip->m_iface);
+
+        if (inet_ntop(lldpd_af(mgmtip->m_family), &mgmtip->m_addr,
+                      mgmtip_str, INET6_ADDRSTRLEN) != NULL) {
+            smap_list_set(mgmtip_list[0], &offset_f0, mgmtip_str);
+            sprintf(iface_str, "%d", mgmtip->m_iface);
+            smap_list_set(mgmtip_list[1], &offset_f1, iface_str);
+        } else {
+            VLOG_ERR("Failed to convert IP address to string. error: %s",
+                      strerror(errno));
+        }
+    }
 }
 
 void lldp_create_vlan_list(char **vlan_list, struct lldpd_port *p_nbr)
@@ -2549,9 +2583,10 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
     char *pbuf=NULL;
     char *decode_str=NULL;
     char *empty=NULL;
-    char *vlan_list[2]={0,0};
-    char *ppvids_list[2]={0,0};
-    char *pids_list[2]={0,0};
+    char *mgmtip_list[2]={0,0}; /* interface list and IP list */
+    char *vlan_list[2]={0,0};   /* vlan name list and vlan id list */
+    char *ppvids_list[2]={0,0}; /* ppvid cap list and ppvid id list */
+    char *pids_list[2]={0,0};   /* pi name list and pi length list */
     int offset=0;
     int idx=0;
     int i;
@@ -2601,6 +2636,22 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
         key_val_int(pbuf, &offset, p_chassis, c_cap_enabled, decode_str, &key_array[idx], &val_array[idx++]);
 
         key_val_int(pbuf, &offset, p_chassis, c_ttl, empty, &key_array[idx], &val_array[idx++]);
+
+        if (g_ovsdb_test_nbr_mgmt_addr_list) {
+            ovsdb_test_nbr_mgmt_addr_list(p_chassis);
+        }
+
+        if (!TAILQ_EMPTY(&p_chassis->c_mgmt)) {
+            mgmtip_list[0] = xcalloc(1, MGMTIP_LIST_MAX);
+            mgmtip_list[1] = xcalloc(1, MGMTIP_LIST_MAX);
+            if (!mgmtip_list[0] || !mgmtip_list[1]) {
+                VLOG_ERR("Error allocating mgmtip_list");
+                goto cleanup;
+            }
+            lldp_create_mgmtip_list(mgmtip_list, p_chassis);
+            key_strval_str(pbuf, &offset, mgmt_ip_list, mgmtip_list[0], &key_array[idx], &val_array[idx++]);
+            key_strval_str(pbuf, &offset, mgmt_iface_list, mgmtip_list[1], &key_array[idx], &val_array[idx++]);
+        }
     }
 
     /* Populate port key/val */
@@ -2722,6 +2773,12 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 
 cleanup:
 
+    if (mgmtip_list[0]) {
+       free(mgmtip_list[0]);
+    }
+    if (mgmtip_list[1]) {
+       free(mgmtip_list[1]);
+    }
     if (vlan_list[0]) {
        free(vlan_list[0]);
     }

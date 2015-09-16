@@ -37,6 +37,30 @@ extern void *ovs_libevent_get_arg(void);
 VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if_test);
 
 /*
+ * Unit test function to create a link list with 2 IPv4 addresses
+ * for a p_nbr->p_chassis
+ * To enable, g_lldpd_test_nbr_mgmt_addr_list = true
+ */
+void
+ovsdb_test_nbr_mgmt_addr_list(struct lldpd_chassis *p_chassis)
+{
+    struct lldpd_mgmt *mgmt;
+    int address1 = 0x09000001;
+    int address2 = 0x09000002;
+
+    TAILQ_INIT(&p_chassis->c_mgmt);
+    mgmt = lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address1, sizeof(struct in_addr), 0);
+    if (mgmt != NULL) {
+        TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
+    }
+    mgmt = lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address2, sizeof(struct in_addr), 0);
+    if (mgmt != NULL) {
+        TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
+    }
+}
+
+
+/*
  * Test ovsdb write failure (TBD)
  */
 static void
