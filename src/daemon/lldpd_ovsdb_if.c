@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2015 Hewlett-Packard Development Company, L.P.
- * All Rights Reserved.
+ * (c) Copyright 2015 Hewlett Packard Enterprise Development LP.
  *
  *   Licensed under the Apache License, Version 2.0 (the "License"); you may
  *   not use this file except in compliance with the License. You may obtain
@@ -2649,8 +2648,10 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
                 goto cleanup;
             }
             lldp_create_mgmtip_list(mgmtip_list, p_chassis);
-            key_strval_str(pbuf, &offset, mgmt_ip_list, mgmtip_list[0], &key_array[idx], &val_array[idx++]);
-            key_strval_str(pbuf, &offset, mgmt_iface_list, mgmtip_list[1], &key_array[idx], &val_array[idx++]);
+            key_strval_str(pbuf, &offset, mgmt_ip_list, mgmtip_list[0],
+                           &key_array[idx], &val_array[idx++]);
+            key_strval_str(pbuf, &offset, mgmt_iface_list, mgmtip_list[1],
+                           &key_array[idx], &val_array[idx++]);
         }
     }
 
@@ -2718,8 +2719,10 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
             goto cleanup;
         }
         lldp_create_vlan_list(vlan_list, p_nbr);
-        key_strval_str(pbuf, &offset, vlan_list_name, vlan_list[0], &key_array[idx], &val_array[idx++]);
-        key_strval_str(pbuf, &offset, vlan_list_id,   vlan_list[1], &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, vlan_name_list, vlan_list[0],
+                       &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, vlan_id_list,   vlan_list[1],
+                       &key_array[idx], &val_array[idx++]);
     }
 
     if (!TAILQ_EMPTY(&p_nbr->p_ppvids)) {
@@ -2730,8 +2733,10 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
             goto cleanup;
         }
         lldp_create_ppvid_list(ppvids_list, p_nbr);
-        key_strval_str(pbuf, &offset, ppvids_list_cap,   ppvids_list[0], &key_array[idx], &val_array[idx++]);
-        key_strval_str(pbuf, &offset, ppvids_list_ppvid, ppvids_list[1], &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, ppvids_cap_list,   ppvids_list[0],
+                       &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, ppvids_ppvid_list, ppvids_list[1],
+                       &key_array[idx], &val_array[idx++]);
     }
 
     if (!TAILQ_EMPTY(&p_nbr->p_pids)) {
@@ -2742,8 +2747,10 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
             goto cleanup;
         }
         lldp_create_pi_list(pids_list, p_nbr);
-        key_strval_str(pbuf, &offset, pids_list_name, pids_list[0], &key_array[idx], &val_array[idx++]);
-        key_strval_str(pbuf, &offset, pids_list_len,  pids_list[1], &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, pids_name_list, pids_list[0],
+                       &key_array[idx], &val_array[idx++]);
+        key_strval_str(pbuf, &offset, pids_len_list,  pids_list[1],
+                       &key_array[idx], &val_array[idx++]);
     }
 #endif
 
@@ -2766,7 +2773,8 @@ int lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
         struct smap_node *node;
         node = smap_add(smap, key_array[i], val_array[i]);
         if (node == NULL) {
-            VLOG_ERR("Failed to add key=%s, val=%s", key_array[i], val_array[i]);
+            VLOG_ERR("Failed to add key=%s, val=%s",
+                      key_array[i], val_array[i]);
             goto cleanup;
         }
     }
