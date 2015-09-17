@@ -86,16 +86,16 @@ class lldpTest (HalonTest):
         else:
             assert switch_number == 1, "Invalid switch " + \
                            str(switch_number)
-        uuid = s.cmd("ovs-vsctl list open_vswitch | grep _uuid | " + \
+        uuid = s.cmd("ovs-vsctl list system | grep _uuid | " + \
                      "awk '{print $3}'").strip()
         info("### got openvswitch uuid - %s ###\n" % uuid)
-        s.cmd("ovs-vsctl -t 30 set open_vswitch %s " \
+        s.cmd("ovs-vsctl -t 30 set system %s " \
               "other_config:lldp_enable=true " \
               "other_config:lldp_tx_interval=5" % uuid)
         info("### Enabled lldp on openvswitch ###\n")
         # time.sleep(1)
         info("### Wakeup and verify lldp enable flag ###\n")
-        out = s.cmd("ovs-vsctl list open_vswitch | grep other_config")
+        out = s.cmd("ovs-vsctl list system | grep other_config")
         assert 'lldp_enable="true"' in out, "lldp not enabled on switch " + str(switch_number)
         info("### lldp configured correctly on switch %d ###\n" %switch_number)
 

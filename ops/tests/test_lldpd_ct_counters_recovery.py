@@ -153,14 +153,14 @@ class lldpTest (HalonTest):
                 str(switch_number) + \
                 " is " + \
                 str(self.pid2) + " ###\n")
-        uuid = s.cmd("ovs-vsctl list open_vswitch | grep _uuid | " + \
+        uuid = s.cmd("ovs-vsctl list system | grep _uuid | " + \
                      "awk '{print $3}'").strip()
-        s.cmd("ovs-vsctl -t 60 set open_vswitch %s " \
+        s.cmd("ovs-vsctl -t 60 set system %s " \
               "other_config:lldp_enable=true " \
               "other_config:lldp_mgmt_addr=204.152.189.%d " \
               "other_config:lldp_tx_interval=5" % (uuid, switch_number))
         time.sleep(1)
-        out = s.cmd("ovs-vsctl list open_vswitch | grep other_config")
+        out = s.cmd("ovs-vsctl list system | grep other_config")
         assert 'lldp_enable="true"' in out, "lldp not enabled on switch " + \
                 str(switch_number)
         info("### lldp configured correctly on switch %d ###\n" %switch_number)

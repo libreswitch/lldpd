@@ -492,7 +492,7 @@ static void lldpd_reset(struct lldpd *cfg, struct lldpd_hardware *hw)
 #define CHANGED(x,y) (x != y)
 #define CHANGED_STR(x,y) (!(x == y || (x && y && !strcmp(x,y))))
 
-static bool lldpd_apply_tlv_configs(const struct ovsrec_open_vswitch *ovs,
+static bool lldpd_apply_tlv_configs(const struct ovsrec_system *ovs,
                                     const char *tlv_name,
                                     u_int8_t *g_lldp_tlv_cfg)
 {
@@ -500,7 +500,7 @@ static bool lldpd_apply_tlv_configs(const struct ovsrec_open_vswitch *ovs,
     bool send_update = 0;
 
     tlv_setting = smap_get_bool(&ovs->other_config, tlv_name,
-                                OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
+                                SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_DEFAULT);
     if ( CHANGED(tlv_setting, *g_lldp_tlv_cfg) ) {
         *g_lldp_tlv_cfg = tlv_setting;
         VLOG_INFO("Configured %s=%d", tlv_name, *g_lldp_tlv_cfg);
@@ -1121,11 +1121,11 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
     int lldp_enabled = -1, tx_timer = 0, tx_hold_multiplier = 0;
     int i;
     bool update_now = 0;
-    const struct ovsrec_open_vswitch *ovs;
+    const struct ovsrec_system *ovs;
     struct ovsdb_idl_txn *lldp_clear_all_nbr_txn = NULL;
     bool nbr_change;
 
-    ovs = ovsrec_open_vswitch_first(idl);
+    ovs = ovsrec_system_first(idl);
 
     /*
      * Check if any table changes present.
@@ -1134,19 +1134,19 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
     if(ovs && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ovs, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(ovs, idl_seqno) &&
             !OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(ovs, idl_seqno)) {
-        VLOG_DBG("No Open_vSwitch cfg changes");
+        VLOG_DBG("No System cfg changes");
         return;
     }
 
     if(ovs) {
         tx_timer = smap_get_int(&ovs->other_config,
-                           OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL,
-                           OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_DEFAULT);
+                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL,
+                           SYSTEM_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_DEFAULT);
 
         //Check the transmit interval and update.
         if (CHANGED(tx_timer, g_lldp_cfg->g_config.c_tx_interval) &&
-                tx_timer >= OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_MIN &&
-                tx_timer <= OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_MAX) {
+                tx_timer >= SYSTEM_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_MIN &&
+                tx_timer <= SYSTEM_OTHER_CONFIG_MAP_LLDP_TX_INTERVAL_MAX) {
             g_lldp_cfg->g_config.c_tx_interval = tx_timer;
             LOCAL_CHASSIS(g_lldp_cfg)->c_ttl = MIN(UINT16_MAX,
                                                (g_lldp_cfg->g_config.c_tx_interval *
@@ -1158,11 +1158,11 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
 
         //Check for hold time and update.
         tx_hold_multiplier = smap_get_int(&ovs->other_config,
-                                  OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_HOLD,
-                                  OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_HOLD_DEFAULT);
+                                  SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD,
+                                  SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD_DEFAULT);
         if (CHANGED(tx_hold_multiplier, g_lldp_cfg->g_config.c_tx_hold) &&
-                tx_hold_multiplier >= OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_HOLD_MIN &&
-                tx_hold_multiplier <= OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_HOLD_MAX) {
+                tx_hold_multiplier >= SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD_MIN &&
+                tx_hold_multiplier <= SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD_MAX) {
             g_lldp_cfg->g_config.c_tx_hold = tx_hold_multiplier;
             LOCAL_CHASSIS(g_lldp_cfg)->c_ttl = MIN(UINT16_MAX,
                                                (g_lldp_cfg->g_config.c_tx_interval *
@@ -1173,7 +1173,7 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
         }
 
         const char *lldp_mgmt_pattern = smap_get(&ovs->other_config,
-                OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+                SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
         if(lldp_mgmt_pattern != NULL) {
             if(CHANGED_STR(lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
                 if(validate_ip((char *) lldp_mgmt_pattern)) {
@@ -1193,62 +1193,62 @@ static void lldpd_apply_global_changes(struct ovsdb_idl *idl,
 
         /* LLDP TLV Configuration */
         if ( lldpd_apply_tlv_configs(ovs,
-                          OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_SYS_NAME_ENABLE,
+                          SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_SYS_NAME_ENABLE,
                           &g_lldp_cfg->g_config.c_lldp_tlv_sys_name_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                          OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_SYS_DESC_ENABLE,
+                          SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_SYS_DESC_ENABLE,
                           &g_lldp_cfg->g_config.c_lldp_tlv_sys_desc_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                          OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_SYS_CAP_ENABLE,
+                          SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_SYS_CAP_ENABLE,
                           &g_lldp_cfg->g_config.c_lldp_tlv_sys_cap_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                          OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_MGMT_ADDR_ENABLE,
+                          SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_MGMT_ADDR_ENABLE,
                           &g_lldp_cfg->g_config.c_lldp_tlv_mgmt_addr_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                          OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_PORT_DESC_ENABLE,
+                          SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_DESC_ENABLE,
                           &g_lldp_cfg->g_config.c_lldp_tlv_port_desc_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                       OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_ID_ENABLE,
+                       SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_ID_ENABLE,
                        &g_lldp_cfg->g_config.c_lldp_tlv_port_vlanid_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                  OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_VLAN_ID_ENABLE,
+                  SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_VLAN_ID_ENABLE,
                   &g_lldp_cfg->g_config.c_lldp_tlv_port_proto_vlanid_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                     OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_NAME_ENABLE,
+                     SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_VLAN_NAME_ENABLE,
                      &g_lldp_cfg->g_config.c_lldp_tlv_port_vlan_name_enable) ) {
             *send_now=1;
         }
 
         if ( lldpd_apply_tlv_configs(ovs,
-                     OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_ID_ENABLE,
+                     SYSTEM_OTHER_CONFIG_MAP_LLDP_TLV_PORT_PROTO_ID_ENABLE,
                      &g_lldp_cfg->g_config.c_lldp_tlv_port_proto_id_enable) ) {
             *send_now=1;
         }
 
         lldp_enabled = smap_get_bool(&ovs->other_config,
-                                 OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_ENABLE,
-                                 OPEN_VSWITCH_OTHER_CONFIG_MAP_LLDP_ENABLE_DEFAULT);
+                                 SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,
+                                 SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE_DEFAULT);
         //Check for lldp enable and update.
         bool is_any_protocol_enabled = false;
         for (i=0; g_lldp_cfg->g_protocols[i].mode != 0; i++) {
@@ -1595,7 +1595,7 @@ lldp_process_all_interfaces_counters (struct lldpd *cfg)
 static void
 lldp_process_global_counters (struct lldpd *cfg)
 {
-    struct ovsrec_open_vswitch *row;
+    struct ovsrec_system *row;
     struct smap smap;
 
     smap_init(&smap);
@@ -1615,8 +1615,8 @@ lldp_process_global_counters (struct lldpd *cfg)
         OVSDB_STATISTICS_LLDP_TABLE_DROPS, total_h_drop_cnt,
         OVSDB_STATISTICS_LLDP_TABLE_AGEOUTS, total_h_ageout_cnt);
 
-    row = (struct ovsrec_open_vswitch *)ovsrec_open_vswitch_first(idl);
-    ovsrec_open_vswitch_set_lldp_statistics(row, &smap);
+    row = (struct ovsrec_system *)ovsrec_system_first(idl);
+    ovsrec_system_set_lldp_statistics(row, &smap);
     smap_destroy(&smap);
 }
 
@@ -1949,14 +1949,14 @@ halon_lldpd_exit(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 static inline void lldpd_chk_for_system_configured(void)
 {
-    const struct ovsrec_open_vswitch *ovs_vsw = NULL;
+    const struct ovsrec_system *ovs_vsw = NULL;
 
     if (system_configured) {
         /* Nothing to do if we're already configured. */
         return;
     }
 
-    ovs_vsw = ovsrec_open_vswitch_first(idl);
+    ovs_vsw = ovsrec_system_first(idl);
 
     if (ovs_vsw && (ovs_vsw->cur_cfg > (int64_t) 0)) {
         system_configured = true;
@@ -2060,11 +2060,11 @@ ovsdb_init(const char *db_path)
 
     /* Choose some OVSDB tables and columns to cache. */
 
-    ovsdb_idl_add_table(idl, &ovsrec_table_open_vswitch);
-    ovsdb_idl_add_column(idl, &ovsrec_open_vswitch_col_cur_cfg);
-    ovsdb_idl_add_column(idl, &ovsrec_open_vswitch_col_other_config);
-    ovsdb_idl_add_column(idl, &ovsrec_open_vswitch_col_lldp_statistics);
-    ovsdb_idl_omit_alert(idl, &ovsrec_open_vswitch_col_lldp_statistics);
+    ovsdb_idl_add_table(idl, &ovsrec_table_system);
+    ovsdb_idl_add_column(idl, &ovsrec_system_col_cur_cfg);
+    ovsdb_idl_add_column(idl, &ovsrec_system_col_other_config);
+    ovsdb_idl_add_column(idl, &ovsrec_system_col_lldp_statistics);
+    ovsdb_idl_omit_alert(idl, &ovsrec_system_col_lldp_statistics);
 
     ovsdb_idl_add_table(idl, &ovsrec_table_interface);
     ovsdb_idl_add_column(idl, &ovsrec_interface_col_name);
