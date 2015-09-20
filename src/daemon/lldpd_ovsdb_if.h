@@ -1,5 +1,6 @@
+
 /*
- * (c) Copyright 2015 Hewlett Packard Enterprise Development LP.
+ * (c) Copyright 2015 Hewlett Packard Enterprise Development LP
  *
  *   Licensed under the Apache License, Version 2.0 (the "License"); you may
  *   not use this file except in compliance with the License. You may obtain
@@ -82,51 +83,60 @@ enum {
 #define LLDPD_MODE_DECODE                   LLDP_DECODE_LIST
 #define LLDP_BOND_SLAVE_SRC_MAC_TYPE_DECODE LLDP_DECODE_LIST
 
-enum {
-p_chassis_c_cap_available,
-p_chassis_c_cap_enabled,
-p_chassis_c_descr,
-p_chassis_c_id,
-p_chassis_c_id_len,
-p_chassis_c_id_subtype,
-p_chassis_c_index,
-p_chassis_c_name,
-p_chassis_c_protocol,
-p_chassis_c_refcount,
-p_chassis_c_ttl,
-p_macphy_autoneg_advertised,
-p_macphy_autoneg_enabled,
-p_macphy_autoneg_support,
-p_macphy_mau_type,
-p_nbr_p_descr,
-p_nbr_p_hidden_in,
-p_nbr_p_hidden_out,
-p_nbr_p_id,
-p_nbr_p_id_len,
-p_nbr_p_id_subtype,
-p_nbr_p_lastchange,
-p_nbr_p_lastupdate,
-p_nbr_p_mfs,
-p_nbr_p_protocol,
-p_nbr_p_pvid,
-p_power_allocated,
-p_power_class,
-p_power_devicetype,
-p_power_enabled,
-p_power_paircontrol,
-p_power_pairs,
-p_power_powertype,
-p_power_priority,
-p_power_requested,
-p_power_source,
-p_power_supported,
-lldp_tlv_map_last
-};
+/*
+ * Neighbor info keys
+ */
+#define LLDP_NBR_CHASSIS_CAP_AVAIL "chassis_capability_available"
+#define LLDP_NBR_CHASSIS_CAP_ENABLE "chassis_capability_enabled"
+#define LLDP_NBR_CHASSIS_DESCR "chassis_description"
+#define LLDP_NBR_CHASSIS_ID "chassis_id"
+#define LLDP_NBR_CHASSIS_ID_LEN "chassis_id_len"
+#define LLDP_NBR_CHASSIS_ID_SUBTYPE "chassis_id_subtype"
+#define LLDP_NBR_CHASSIS_IDX "chassis_index"
+#define LLDP_NBR_CHASSIS_NAME "chassis_name"
+#define LLDP_NBR_CHASSIS_PROTOCOL "chassis_protocol"
+#define LLDP_NBR_CHASSIS_REF_COUNT "chassis_refcount"
+#define LLDP_NBR_CHASSIS_TTL "chassis_ttl"
+#define LLDP_NBR_MAC_AUTONEG_ADV "macphy_autoneg_advertised"
+#define LLDP_NBR_MAC_AUTONEG_ENB "macphy_autoneg_enabled"
+#define LLDP_NBR_MAC_AUTONEG_SUPPORT "macphy_autoneg_support"
+#define LLDP_NBR_MAC_AUTONEG_TYPE "macphy_mau_type"
+#define LLDP_NBR_PORT_DESCR "port_description"
+#define LLDP_NBR_PORT_HIDDEN_IN "port_hidden_in"
+#define LLDP_NBR_PORT_HIDDEN_OUT "port_hidden_out"
+#define LLDP_NBR_PORT_ID "port_id"
+#define LLDP_NBR_PORT_ID_LEN "port_id_len"
+#define LLDP_NBR_PORT_ID_SUBTYPE "port_id_subtype"
+#define LLDP_NBR_PORT_LASTCHANGE "port_lastchange"
+#define LLDP_NBR_PORT_LASTUPDATE "port_lastupdate"
+#define LLDP_NBR_PORT_MFS "port_mfs"
+#define LLDP_NBR_PORT_PROTOCOL "port_protocol"
+#define LLDP_NBR_PORT_PVID "port_pvid"
+#define LLDP_NBR_POWER_ALLOC "power_allocated"
+#define LLDP_NBR_POWER_CLASS "power_class"
+#define LLDP_NBR_POWER_DEVICE "power_devicetype"
+#define LLDP_NBR_POWER_ENABLED "power_enabled"
+#define LLDP_NBR_POWER_PAIRCTL "power_paircontrol"
+#define LLDP_NBR_POWER_PAIR "power_pairs"
+#define LLDP_NBR_POWER_TYPE "power_powertype"
+#define LLDP_NBR_POWER_PRIO "power_priority"
+#define LLDP_NBR_POWER_REQ "power_requested"
+#define LLDP_NBR_POWER_SRC "power_source"
+#define LLDP_NBR_POWER_SUPPORT "power_supported"
+
+#define LLDP_NBR_MGMT_IP_LIST "mgmt_ip_list"
+#define LLDP_NBR_MGMT_IF_LIST "mgmt_iface_list"
+#define LLDP_NBR_VLAN_NAME_LIST "vlan_name_list"
+#define LLDP_NBR_VLAN_ID_LIST "vlan_id_list"
+#define LLDP_NBR_PPVIDS_CAP_LIST "ppvids_cap_list"
+#define LLDP_NBR_PPVIDS_PPVID_LIST "ppvids_ppvid_list"
+#define LLDP_NBR_PIDS_NAME_LIST "pids_name_list"
+#define LLDP_NBR_PIDS_LEN_LIST "pids_len_list"
 
 /* check any stat/counter changes every so often and report if changed */
-#define LLDP_CHECK_STATS_FREQUENCY_DFLT             5 /* seconds */
+#define LLDP_CHECK_STATS_FREQUENCY_DFLT             5   /* seconds */
 #define LLDP_CHECK_STATS_FREQUENCY_DFLT_MSEC \
-    (LLDP_CHECK_STATS_FREQUENCY_DFLT * 1000)        /* milliseconds */
+    (LLDP_CHECK_STATS_FREQUENCY_DFLT * 1000)    /* milliseconds */
 
 void lldpd_ovsdb_init(int argc, char *argv[]);
 void init_ovspoll_to_libevent(struct lldpd *cfg);
@@ -135,4 +145,4 @@ void add_lldpd_hardware_interface(struct lldpd_hardware *hw);
 void del_lldpd_hardware_interface(struct lldpd_hardware *hw);
 void ovs_libevent_schedule_nbr(void *arg);
 void add_vlans_from_ovsdb(char *hw_name);
-#endif //lldpd_ovsdb_if.h
+#endif

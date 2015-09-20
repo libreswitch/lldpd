@@ -1,5 +1,6 @@
+
 /*
- * (c) Copyright 2015 Hewlett Packard Enterprise Development LP.
+ * (c) Copyright 2015 Hewlett Packard Enterprise Development LP
  *
  *   Licensed under the Apache License, Version 2.0 (the "License"); you may
  *   not use this file except in compliance with the License. You may obtain
@@ -36,7 +37,9 @@
 #include <string.h>
 #include <assert.h>
 
-// OVS headers
+/*
+ * OVS headers
+ */
 #include "unixctl.h"
 #include "openvswitch/vlog.h"
 #include "coverage.h"
@@ -60,16 +63,17 @@ ovsdb_test_nbr_mgmt_addr_list(struct lldpd_chassis *p_chassis)
     int address2 = 0x09000002;
 
     TAILQ_INIT(&p_chassis->c_mgmt);
-    mgmt = lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address1, sizeof(struct in_addr), 0);
+    mgmt =
+        lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address1, sizeof (struct in_addr), 0);
     if (mgmt != NULL) {
         TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
     }
-    mgmt = lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address2, sizeof(struct in_addr), 0);
+    mgmt =
+        lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address2, sizeof (struct in_addr), 0);
     if (mgmt != NULL) {
         TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
     }
 }
-
 
 /*
  * Test ovsdb write failure (TBD)
@@ -83,13 +87,14 @@ test_ovsdb_write_failure(int param, char *return_status)
 #define LLDP_TEST_START 0
 #define LLDP_TEST_STOP 1
 u_int64_t libevent_cnt_start, libevent_cnt_end;
+
 /*
  * Test libevent loop by sending a burst of 100 events
  * and making sure they get executed
- * Execute test: 
+ * Execute test:
  * ovs-appctl -t lldpd lldpd/test libevent 0
  * Checks result:
- * ovs-appctl -t lldpd lldpd/test libevent 1 
+ * ovs-appctl -t lldpd lldpd/test libevent 1
  */
 static void
 test_ovsdb_libevent_loop(int param, char *return_status)
@@ -100,13 +105,14 @@ test_ovsdb_libevent_loop(int param, char *return_status)
 
     libevent_arg = ovs_libevent_get_arg();
     if (libevent_arg == NULL) {
-        sprintf(return_status, "%s", "Error: Uninitlized lldpd config pointer");
+        sprintf(return_status, "%s",
+                "Error: Uninitlized lldpd config pointer");
         return;
     }
 
     if (param == LLDP_TEST_START) {
         libevent_cnt_start = ovs_libevent_get_counter();
-        for (i=0; i < LIBEVENT_TEST_CNT; i++) {
+        for (i = 0; i < LIBEVENT_TEST_CNT; i++) {
             ovs_libevent_schedule_nbr(libevent_arg);
         }
         sprintf(return_status, "%s", "OK");
@@ -115,12 +121,12 @@ test_ovsdb_libevent_loop(int param, char *return_status)
         libevent_cnt_total = libevent_cnt_end - libevent_cnt_start;
         if (libevent_cnt_total >= LIBEVENT_TEST_CNT) {
             VLOG_INFO("libevent unit test done - start=%lu end=%lu",
-                       libevent_cnt_start, libevent_cnt_end);
+                      libevent_cnt_start, libevent_cnt_end);
             sprintf(return_status, "%s", "OK");
         } else {
             sprintf(return_status,
                     "Error: Missing lldpd events (expcted=%d) (arrived=%d)",
-                    LIBEVENT_TEST_CNT, (int)libevent_cnt_total);
+                    LIBEVENT_TEST_CNT, (int) libevent_cnt_total);
         }
     }
 }
@@ -135,8 +141,7 @@ test_parse_options(int argc, const char *argv[], char *return_status)
 
     if (!strcmp("ovsdb", argv[1])) {
         test_ovsdb_write_failure(atoi(argv[2]), return_status);
-    } else
-    if (!strcmp("libevent", argv[1])) {
+    } else if (!strcmp("libevent", argv[1])) {
         test_ovsdb_libevent_loop(atoi(argv[2]), return_status);
     } else {
         sprintf(return_status, "Unsupported test - %s", argv[1]);
@@ -145,12 +150,12 @@ test_parse_options(int argc, const char *argv[], char *return_status)
 
 void
 lldpd_unixctl_test(struct unixctl_conn *conn, int argc OVS_UNUSED,
-                          const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+                   const char *argv[]OVS_UNUSED, void *aux OVS_UNUSED)
 {
     char return_status[80] = "OK";
     int i;
 
-    for (i=0; i < argc; i++) {
+    for (i = 0; i < argc; i++) {
         VLOG_INFO("lldpd/test arg %d - %s", i, argv[i]);
     }
     test_parse_options(argc, argv, return_status);
