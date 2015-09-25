@@ -27,7 +27,10 @@
  *                   configuration changes and apply to lldpd config.
  *
  *                3. Update statistics and neighbor tables periodically
- *                   to database
+ *                   to database.
+ *
+ *                4. Sync lldpd internal data structures from database
+ *                   when restarting lldpd after a crash.
  *
  */
 
@@ -112,16 +115,15 @@ bool exiting = false;
 static char *vlan_name_lookup_by_vid(int64_t vid);
 
 /*
- * interface_data struct that contains interface table information
- * for an interface.
+ * The structure contains interface table information for an interface
  */
 struct interface_data {
-	char *name;                 /* Always nonnull. */
+	char *name;                 /* Always non null */
 	int native_vid;             /* "tag" column - native VLAN ID. */
 	int synced_from_db;
-	const struct ovsrec_interface *ifrow;       /* handle to ovsrec row */
-	struct port_data *portdata; /* handle to port data */
-	struct lldpd_hardware *hw;  /* handle to lldp harware interface */
+	const struct ovsrec_interface *ifrow;       /* Handle to ovsrec row */
+	struct port_data *portdata; /* Handle to port data */
+	struct lldpd_hardware *hw;  /* Handle to lldp hardware interface */
 };
 
 /*
@@ -133,11 +135,11 @@ struct port_data {
 	enum ovsrec_port_vlan_mode_e vlan_mode;     /* "vlan_mode" column. */
 	int native_vid;             /* "tag" column - native VLAN ID. */
 	bool trunk_all_vlans;       /* Indicates whether this port is implicitly
-				     * trunking all VLANs defined in VLAN table.
+				     * Trunking all VLANs defined in VLAN table.
 				     */
-	struct lldpd_hardware **interfaces; /* handle to the hw interface */
+	struct lldpd_hardware **interfaces; /* Handle to the hw interface */
 	int n_interfaces;           /* Number of interfaces on this port */
-	const struct ovsrec_port *portrow;  /* handle to ovsrec tow */
+	const struct ovsrec_port *portrow;  /* Handle to ovsrec tow */
 };
 
 /* Mapping of all the interfaces. */
@@ -157,8 +159,8 @@ uint32_t lldp_decode_start[LLDP_INDEX_MAX + 1];
  */
 
 /*
- * Finds a set bit in an 32b int
- * Input wil be a bit mask option with only one bit set
+ * Finds a set bit in an 32b integer when
+ * input is a bit mask option with only one bit set.
  */
 inline static int
 bit_set(uint32_t n)
@@ -173,9 +175,9 @@ bit_set(uint32_t n)
 
 /*
  * The function takes a bitmap of features as input and creates
- * a comma-seperated list of feature names as output.
- * Category is an index into a decode table for the feature.
- * For example, we may get a bit mask representing capabilities
+ * a comma-separated list of feature names as output.
+ * Category points to the decode table for the feature class.
+ * For example, map a bit mask representing capabilities
  * bit 2 set => Bridge
  * bit 4 set => Router
  * Input
@@ -207,9 +209,9 @@ decode_features(char *decode_str, uint32_t features, uint32_t category)
 }
 
 /*
- * The function takes a proprty, in binary form, as input
- * and creates a proprty name as output.
- * Category is an index into a decode table for the feature
+ * The function takes a property (opcode) as input
+ * and creates a property name as output.
+ * Category points to the decode table for the feature class.
  */
 static void
 decode_property(char *decode_str, uint32_t property, uint32_t category)
@@ -226,7 +228,7 @@ decode_property(char *decode_str, uint32_t property, uint32_t category)
 }
 
 /*
- * Converts a binary address to an ASCII address in the form:
+ * Converts a binary network address to an ASCII address in the form:
  * xx:yy:...:zz
  */
 static void
@@ -247,19 +249,19 @@ decode_nw_addr(char *decode_str, char *user_str, int key_len)
 }
 
 /*
- * This initialization function fills up a decode table
- * from binary to ASCII.
+ * This initialization function fills up the decode table.
  * The decode table is broken into categories.
- * Each category will have a list of options, starting from
+ * Each category maps a list of options, starting from
  * 0, up to MAX, currently MAX < 64
- * The decode table will map the option from binary to ASCII.
+ * The decode table maps an option from binary to string.
  *
- * When it's time to update neighbor table the module uses
- * the decode table to map a field from binary to an English word
- * or a list of words.
+ * When it's time to update neighbor table the code uses
+ * the decode table to map a field from binary to feature
+ * name or to a list of feature names.
  *
- * Each LLDP feature option range starts at lldp_decode_start[index]
- * and ends at lldp_decode_start[index+1]
+ * Each LLDP feature option range starts at lldp_decode_start[category]
+ * and ends at lldp_decode_start[category+1]
+ * The categories are enums mapping all feature classes
  */
 static void
 lldp_ovsdb_setup_decode()
@@ -420,7 +422,7 @@ lldp_ovsdb_setup_decode()
 	LLDP_DECODE_SETUP(LLDP_PPVID_CAP_ENABLED, ENABLED, index);
 	index += bit_set(LLDP_PPVID_CAP_ENABLED) + 1;
 
-/* see http://www.iana.org/assignments/address-family-numbers */
+/* See http://www.iana.org/assignments/address-family-numbers */
 	lldp_decode_start[LLDP_MGMT_ADDR_INDEX] = index;
 	LLDP_DECODE_SETUP(LLDP_MGMT_ADDR_NONE, None, index);
 	LLDP_DECODE_SETUP(LLDP_MGMT_ADDR_IP4, IPv4, index);
@@ -539,7 +541,7 @@ lldp_ovsdb_setup_decode()
 static void
 lldpd_reset(struct lldpd *cfg, struct lldpd_hardware *hw)
 {
-	/* If hw is NULL we will reset all hw else reset only specific hw */
+	/* If hw is NULL reset all hw else reset only specific hw */
 	if (!hw) {
 		struct lldpd_hardware *hardware;
 
@@ -573,7 +575,7 @@ lldpd_apply_tlv_configs(const struct ovsrec_open_vswitch *ovs,
 	return send_update;
 }                               /* lldpd_apply_tlv_configs */
 
-/*Check is ip is valid IPv4 or IPv6 address*/
+/* Check if ip is a valid IPv4 or IPv6 address */
 static bool
 validate_ip(char *ip)
 {
@@ -599,7 +601,7 @@ del_old_db_interface(struct shash_node *sh_node)
 
 		/*
 		 * If the lldp_hardware is also cleaned up
-		 * we can remove the entry else just nullify
+		 * remove the entry else just nullify
 		 * ovsdb record handle
 		 */
 		if (itf && !itf->hw) {
@@ -671,7 +673,7 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 		if (ifrow && (OVSREC_IDL_IS_ROW_INSERTED(ifrow, idl_seqno) ||
 			      OVSREC_IDL_IS_ROW_MODIFIED(ifrow, idl_seqno))) {
 
-			/* Check for other_config:lldp_enable_dir changes. */
+			/* Check for other_config:lldp_enable_dir changes */
 			const char *ifrow_other_config_lldp_enable_dir =
 				smap_get(&ifrow->other_config,
 					 INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
@@ -714,7 +716,7 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 								cfg_changed);
 			}
 
-			/* Check for link_state change. */
+			/* Check for link_state change */
 			bool link_state_bool = false;
 
 			if (ifrow && ifrow->link_state &&
@@ -730,7 +732,7 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 		}
 
 		if (cfg_changed) {
-			/* Update interface configuration. */
+			/* Update interface configuration */
 			rc++;
 		}
 	}
@@ -747,12 +749,11 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 	struct shash sh_idl_interfaces;
 	struct shash_node *sh_node, *sh_next;
 
-	/* Collect all the interfaces in the dB. */
+	/* Collect all the interfaces in the DB. */
 	shash_init(&sh_idl_interfaces);
 	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
 		/*
-		 * Check if any table changes present.
-		 * If no change just return from here
+		 * Check if any table changes present
 		 */
 		if (ifrow && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ifrow, idl_seqno) &&
 		    !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(ifrow, idl_seqno) &&
@@ -768,7 +769,7 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 		}
 	}
 
-	/* Delete old interfaces. */
+	/* Delete old interfaces */
 	SHASH_FOR_EACH_SAFE(sh_node, sh_next, &all_interfaces) {
 		struct interface_data *new_itf =
 			shash_find_data(&sh_idl_interfaces, sh_node->name);
@@ -776,7 +777,7 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 			del_old_db_interface(sh_node);
 		}
 	}
-	/* Add new interfaces. */
+	/* Add new interfaces */
 	SHASH_FOR_EACH(sh_node, &sh_idl_interfaces) {
 		struct interface_data *new_itf = shash_find_data(&all_interfaces,
 								 sh_node->name);
@@ -787,7 +788,7 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 		}
 	}
 
-	/* Check for interfaces that changed config--and need handling now. */
+	/* Check for interfaces that changed and need handling now */
 	rc = handle_interfaces_config_mods(&sh_idl_interfaces, g_lldp_cfg);
 
 	/* Destroy the shash of the IDL interfaces */
@@ -809,8 +810,7 @@ lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
 
 	br = ovsrec_bridge_first(idl);
 	/*
-	 * Check if any table changes present.
-	 * If no change just return from here
+	 * Check if any table changes present
 	 */
 	if (br && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(br, idl_seqno) &&
 	    !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(br, idl_seqno) &&
@@ -819,7 +819,7 @@ lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
 		return;
 	}
 
-	/* if bridge table has a row, enable bridge capabilities */
+	/* If bridge table has a row, enable bridge capabilities */
 	if (br) {
 		if (!(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_BRIDGE)) {
 			LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled |= LLDP_CAP_BRIDGE;
@@ -829,8 +829,8 @@ lldpd_apply_bridge_changes(struct ovsdb_idl *idl,
 		}
 	} else {
 		/*
-		 * If bridge capabililty is set then clear since we have
-		 * no bridge entries
+		 * If bridge capabilty is set then clear since
+		 * no bridge entries are left.
 		 */
 		if (LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_BRIDGE) {
 			LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled &= ~LLDP_CAP_BRIDGE;
@@ -853,8 +853,7 @@ lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
 
 	vrf = ovsrec_vrf_first(idl);
 	/*
-	 * Check if any table changes present.
-	 * If no change just return from here
+	 * Check if any table changes present
 	 */
 	if (vrf && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(vrf, idl_seqno) &&
 	    !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(vrf, idl_seqno) &&
@@ -863,7 +862,7 @@ lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
 		return;
 	}
 
-	/* if VRF table has a row, enable router capabilities */
+	/* If VRF table has a row, enable router capabilities */
 	if (vrf) {
 		if (!(LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_ROUTER)) {
 			LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled |= LLDP_CAP_ROUTER;
@@ -871,8 +870,8 @@ lldpd_apply_vrf_changes(struct ovsdb_idl *idl,
 		}
 	} else {
 		/*
-		 * If Router capabililty is set then clear since we have
-		 * no VRF entries
+		 * If Router capabililty is set then clear since
+		 * no VRF entries are left.
 		 */
 		if (LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled & LLDP_CAP_ROUTER) {
 			LOCAL_CHASSIS(g_lldp_cfg)->c_cap_enabled &= ~LLDP_CAP_ROUTER;
@@ -889,7 +888,7 @@ set_lldp_vlan_name_tlv(int64_t vlan, struct lldpd_hardware *hw)
 {
 	struct lldpd_vlan *v;
 
-	/* Check if the VLAN is already here. */
+	/* Check if the VLAN is already here */
 	struct lldpd_port *port = &hw->h_lport;
 	char *vlan_name;
 
@@ -938,7 +937,7 @@ set_lldp_pvid(const struct ovsrec_port *row, struct interface_data *interface)
 		VLOG_ERR("NULL row passed to %s", __FUNCTION__);
 	}
 
-	/* Get native VID from 'tag' column. */
+	/* Get native VID from 'tag' column */
 	if ((row->tag != NULL)) {
 		native_vid = (int) *row->tag;
 		if (interface->hw) {
@@ -991,7 +990,7 @@ del_old_port(struct shash_node *sh_node)
 		 */
 		shash_delete(&all_ports, sh_node);
 
-		/* Done.  Free the rest of the structure. */
+		/* Done -  Free the rest of the structure */
 		free(port->name);
 		free(port);
 	}
@@ -1006,7 +1005,7 @@ add_new_port(const struct ovsrec_port *port_row)
 	struct port_data *new_port = NULL;
 	int rc = 0;
 
-	/* Allocate structure to save state information for this port. */
+	/* Allocate structure to save state information for this port */
 	new_port = xzalloc(sizeof (struct port_data));
 
 	if (!shash_add_once(&all_ports, port_row->name, new_port)) {
@@ -1015,7 +1014,7 @@ add_new_port(const struct ovsrec_port *port_row)
 	} else {
 		new_port->name = xstrdup(port_row->name);
 
-		/* Initialize VLANs to NULL for now. */
+		/* Initialize VLANs to NULL for now */
 		new_port->native_vid = -1;
 		new_port->trunk_all_vlans = false;
 		new_port->vlan_mode = PORT_VLAN_MODE_ACCESS;
@@ -1032,19 +1031,18 @@ handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
 	int k;
 	int rc = 0;
 
-	/* Check for changes in the port row entries. */
+	/* Check for changes in the port row entries */
 	SHASH_FOR_EACH(sh_node, &all_ports) {
 		const struct ovsrec_port *row = shash_find_data(sh_idl_ports,
 								sh_node->name);
 
-		/* Check for changes to row. */
+		/* Check for changes to row */
 		if (OVSREC_IDL_IS_ROW_INSERTED(row, idl_seqno) ||
 		    OVSREC_IDL_IS_ROW_MODIFIED(row, idl_seqno)) {
 			struct port_data *port = sh_node->data;
 
 			/*
-			 * Cleanup old interface list
-			 * in hashmap and rebuild
+			 * Cleanup old interface list in hashmap and rebuild
 			 *
 			 */
 			if (port->interfaces && port->n_interfaces && port->interfaces) {
@@ -1071,10 +1069,10 @@ handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
 				intf = shash_find_data(&all_interfaces, iface->name);
 				intf->portdata = port;
 				/*
-				 * - add lldp hardware to our structure so we can
-				 *   cleanup lldp hardware incase row gets deleted
+				 * - Add lldp hardware to our structure to allow
+				 *   cleanup of lldp hardware in case row gets deleted.
 				 * - Cleanup existing lldp hardware vlan info
-				 *   since we will reconstruct this again
+				 *   since the code will reconstruct this again.
 				 *
 				 */
 				if (intf->hw) {
@@ -1155,8 +1153,7 @@ lldpd_apply_port_changes(struct ovsdb_idl *idl,
 	row = ovsrec_port_first(idl);
 
 	/*
-	 * Check if any table changes present.
-	 * If no change just return from here
+	 * Check if any table change present
 	 */
 	if (row && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(row, idl_seqno) &&
 	    !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(row, idl_seqno) &&
@@ -1165,7 +1162,7 @@ lldpd_apply_port_changes(struct ovsdb_idl *idl,
 		return;
 	}
 
-	/* Collect all the ports in the DB. */
+	/* Collect all the ports in the DB */
 	shash_init(&sh_idl_ports);
 	OVSREC_PORT_FOR_EACH(row, idl) {
 		if (!shash_add_once(&sh_idl_ports, row->name, row)) {
@@ -1173,7 +1170,7 @@ lldpd_apply_port_changes(struct ovsdb_idl *idl,
 		}
 	}
 
-	/* Delete old ports. */
+	/* Delete old ports */
 	SHASH_FOR_EACH_SAFE(sh_node, sh_next, &all_ports) {
 		struct port_data *port = shash_find_data(&sh_idl_ports, sh_node->name);
 
@@ -1185,7 +1182,7 @@ lldpd_apply_port_changes(struct ovsdb_idl *idl,
 		}
 	}
 
-	/* Add new ports. */
+	/* Add new ports */
 	SHASH_FOR_EACH(sh_node, &sh_idl_ports) {
 		struct port_data *new_port =
 			shash_find_data(&all_ports, sh_node->name);
@@ -1197,7 +1194,7 @@ lldpd_apply_port_changes(struct ovsdb_idl *idl,
 		}
 	}
 
-	/* handle any config changes */
+	/* Handle any config changes */
 	if (handle_port_config_mods(&sh_idl_ports, g_lldp_cfg))
 		*send_now = 1;
 
@@ -1210,7 +1207,7 @@ vlan_name_lookup_by_vid(int64_t vid)
 {
 	const struct ovsrec_vlan *row;
 
-	/* Collect all the VLANs in the DB. */
+	/* Collect all the VLANs in the DB */
 
 	OVSREC_VLAN_FOR_EACH(row, idl) {
 		if (row->id == vid) {
@@ -1241,8 +1238,7 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 	ovs = ovsrec_system_first(idl);
 
 	/*
-	 * Check if any table changes present.
-	 * If no change just return from here
+	 * Check if any table changes present
 	 */
 	if (ovs && !OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(ovs, idl_seqno) &&
 	    !OVSREC_IDL_ANY_TABLE_ROWS_DELETED(ovs, idl_seqno) &&
@@ -1413,8 +1409,8 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 		}
 
 		/*
-		 * For now we support only lldp. But in future when we support CDP
-		 * and EDP this code will make more sense.
+		 * For now support only lldp but allow support for CDP
+		 * and EDP in the future.
 		 */
 		if (is_any_protocol_enabled) {
 			g_lldp_cfg->g_config.c_is_any_protocol_enabled = 1;
@@ -1424,7 +1420,7 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 	}
 
 	if (update_now) {
-		/* Update the information to local Chasis */
+		/* Update the information to local Chassis */
 		levent_update_now(g_lldp_cfg);
 	}
 	return;
@@ -1568,16 +1564,16 @@ init_ovspoll_to_libevent(struct lldpd *cfg)
 }                               /* init_ovspoll_to_libevent */
 
 /*
- * global & per interface statistics/counter management functions
+ * Global & per interface statistics/counter management functions
  */
 
-/* timer working variables */
+/* Timer working variables */
 static u_int64_t lldpd_stats_last_check_time = 0;
 static u_int64_t lldpd_stats_check_interval =
 	LLDP_CHECK_STATS_FREQUENCY_DFLT_MSEC;
 
 /*
- * global versions of interface counters (summed up)
+ * Global versions of interface counters (summed up)
  */
 static u_int64_t total_h_tx_cnt = 0;
 static u_int64_t total_h_rx_cnt = 0;
@@ -1603,7 +1599,7 @@ static char *lldp_interface_statistics_keys[] = {
 	(sizeof(lldp_interface_statistics_keys) / sizeof(char*))
 
 /*
- * read back a counter from interface & update the count on interface
+ * Read back a counter from interface & update the count on interface
  */
 #define SYNC_COUNTER_FROM_DB(KEY, HW_COUNTER)				\
 	{								\
@@ -1616,7 +1612,7 @@ static char *lldp_interface_statistics_keys[] = {
 	}
 
 /*
- * Read back all counters from db in case we just restarted from a crash.
+ * Read back all counters from db in case process just restarted after a crash.
  * Note that it is NOT an error if counters cannot be read
  * back from the database.  It simply means that the database also just
  * re-started from scratch.
@@ -1632,7 +1628,7 @@ sync_lldp_counters_from_db(struct interface_data *dual_itf)
 						     OVSDB_TYPE_STRING,
 						     OVSDB_TYPE_INTEGER);
 
-	/* can happen if ovsdb also re-started from scratch */
+	/* Can happen if ovsdb also re-started from scratch */
 	if (NULL == datum) {
 		VLOG_DBG("ovsrec_interface_get_lldp_statistics returned NULL for %s",
 			 dual_itf->name);
@@ -1665,7 +1661,7 @@ lldp_process_one_interface_counters(struct interface_data *dual_itf)
 	struct ovsrec_interface *ifrow =
 		(struct ovsrec_interface *) dual_itf->ifrow;
 
-	/* if either pointer not found, cannot proceed */
+	/* If either pointer not found, cannot proceed */
 	if (!hardware || !ifrow) {
 		VLOG_DBG("could not check stats for %s (hardware %s, dbrow %s)",
 			 dual_itf->name,
@@ -1673,7 +1669,7 @@ lldp_process_one_interface_counters(struct interface_data *dual_itf)
 		return;
 	}
 
-	/* if started new, sync back the counters from the db */
+	/* If started new, sync back the counters from the db */
 	if (!dual_itf->synced_from_db) {
 		sync_lldp_counters_from_db(dual_itf);
 		dual_itf->synced_from_db = 1;
@@ -1715,7 +1711,7 @@ lldp_process_all_interfaces_counters(struct lldpd *cfg)
 	struct shash_node *sh_node;
 	struct interface_data *dual_itf;
 
-	/* start counting these in case anything changed */
+	/* Start counting these in case anything changed */
 	total_h_tx_cnt = 0;
 	total_h_rx_cnt = 0;
 	total_h_rx_discarded_cnt = 0;
@@ -1725,7 +1721,7 @@ lldp_process_all_interfaces_counters(struct lldpd *cfg)
 	total_h_delete_cnt = 0;
 	total_h_drop_cnt = 0;
 
-	/* for each interface, compare & update db */
+	/* For each interface, compare & update db */
 	SHASH_FOR_EACH(sh_node, &all_interfaces) {
 		dual_itf = sh_node->data;
 		lldp_process_one_interface_counters(dual_itf);
@@ -1773,12 +1769,12 @@ lldpd_stats_analyze(struct lldpd *cfg)
 
 	enum ovsdb_idl_txn_status status;
 
-	/* if we have not synced our db cache, dont continue */
+	/* Don't continue if database is not synced */
 	if (!ovsdb_idl_has_ever_connected(idl)) {
 		return;
 	}
 
-	/* ok we must have talked to database at least once, continue */
+        /* Create transaction only if none outstanding */
 	if (NULL == lldp_stats_txn) {
 		lldp_stats_txn = ovsdb_idl_txn_create(idl);
 		lldp_process_all_interfaces_counters(cfg);
@@ -1821,7 +1817,6 @@ lldpd_stats_run(struct lldpd *cfg)
 		return;
 	}
 
-	/* ok, our time has come, do the work */
 	VLOG_DBG("checking lldpd stats NOW at %" PRIu64 " msecs!", time_now);
 	lldpd_stats_last_check_time = time_now;
 	lldpd_stats_analyze(cfg);
@@ -1848,12 +1843,12 @@ lldpd_ovsdb_clear_all_nbrs_run(struct ovsdb_idl *idl)
 /*
  * The fuction scans all LLDP ports and looks for neighbor
  * changes triggered by LLDPD.
- * The following chages are supported:
- * ADD (or MOD), UPDATE and DELETE
- * Update mean a keep alive refresh and only requires a update time change
- * ADD/MOD result in writing/rewriting the entire neighbor table to OVSDB
- * The functions also looks for stale neighbors by checking update time
- * against current time. In this case the neighbor entry is deleting
+ * The following changes are supported: ADD, MOD, UPD and DEL.
+ * Update means a keep alive refresh and only requires updating a timestamp.
+ * ADD/MOD requires writing/rewriting the entire neighbor table to OVSDB
+ * DEL clears up neighbor table info.
+ * The function also looks for stale neighbors by checking update time
+ * against current time. In this case the neighbor entry is deleted
  * from OVSDB.
  */
 static bool
@@ -1872,9 +1867,9 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 	struct interface_data *itf;
 
 	/*
-	 * Scan all hardware interfaces in lldpd and look for updates
-	 * When we find an interface that got changed, find a corrosponding
-	 * OVSDB nbr and update that nbr according to lldps change opcode
+	 * Scan all hardware interfaces in lldpd and look for updates.
+	 * For any interface that got changed, find a corresponding
+	 * OVSDB nbr and update that nbr according to lldps change opcode.
 	 */
 	SHASH_FOR_EACH(if_node, &all_interfaces) {
 		itf = if_node->data;
@@ -1952,10 +1947,11 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 	}                           /* interface loop */
 
 	/*
-	 * Scan all nbr smaps in OVSDB and look for aged out entries;
-	 * Delete any such nbr smaps from database.
-	 * This will cover any corner cases, like restart, in which lldpd
-	 * fails to report aged out nbr entries in a timely manner.
+	 * Scan all nbr tables in OVSDB and look for aged out entries;
+	 * Delete any such nbr table from database.
+	 * This covers any corner case, like port disconnect and restart,
+         * in which lldpd fails to report aged out nbr entries in a timely
+         * manner.
 	 */
 	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
 		last_update_str =
@@ -1982,8 +1978,8 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 /*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
- * It's after a failure (e.g. neighbor update failure) to since, at that
- * point, OVSDB neighbor info could be out of sync.
+ * It's called after a transaction failure (e.g. neighbor update failure)
+ * since, at that point, OVSDB neighbor info could be out of sync.
  */
 static void
 lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
@@ -1995,9 +1991,9 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 	bool found = false;
 
 	/*
-	 * Scan all hardware interfaces in lldpd
-	 * Copy nbr info from lldpd to OVSDB whenever lldpd has a port entry
-	 * Otherwise, delete nbr info from OVSDB
+	 * Scan all hardware interfaces in lldpd.
+	 * Copy nbr info from lldpd to OVSDB whenever lldpd has a port entry.
+	 * Otherwise, delete nbr info from OVSDB.
 	 */
 	TAILQ_FOREACH(hardware, &cfg->g_hardware, h_entries) {
 
@@ -2042,7 +2038,7 @@ lldpd_reconfigure(struct ovsdb_idl *idl, struct lldpd *g_lldp_cfg)
 	lldpd_apply_global_changes(idl, g_lldp_cfg, &send_now);
 
 	if (send_now) {
-		/* An Asnychronous send as Information has changed */
+		/* An Asnychronous event as Information has changed */
 		levent_send_now(g_lldp_cfg);
 	}
 
@@ -2129,7 +2125,7 @@ lldpd_chk_for_system_configured(void)
 	const struct ovsrec_system *ovs_vsw = NULL;
 
 	if (system_configured) {
-		/* Nothing to do if we're already configured. */
+		/* Nothing to do if lldpd is already configured. */
 		return;
 	}
 
@@ -2179,7 +2175,7 @@ lldpd_run(struct lldpd *cfg)
 		VLOG_INFO_ONCE("%s (Halon lldpd) %s", program_name, VERSION);
 	}
 
-	/* create a confirmed database transaction for nbr and config updates */
+	/* Create a confirmed database transaction for nbr and config updates */
 	if (!confirm_txn) {
 		confirm_txn = ovsdb_idl_txn_create(idl);
 
@@ -2231,13 +2227,13 @@ lldpd_wait(void)
 static void
 ovsdb_init(const char *db_path)
 {
-	/* Initialize IDL through a new connection to the dB. */
+	/* Initialize IDL through a new connection to the dB */
 	idl = ovsdb_idl_create(db_path, &ovsrec_idl_class, false, true);
 	idl_seqno = ovsdb_idl_get_seqno(idl);
 	ovsdb_idl_set_lock(idl, "ops_lldpd");
 	ovsdb_idl_verify_write_only(idl);
 
-	/* Choose some OVSDB tables and columns to cache. */
+	/* Choose some OVSDB tables and columns to cache */
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_system);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_cur_cfg);
@@ -2274,7 +2270,7 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_name);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
 
-	/* Register ovs-appctl commands for this daemon. */
+	/* Register ovs-appctl commands for this daemon */
 	unixctl_command_register("lldpd/dump", "", 0, 0, lldpd_unixctl_dump, NULL);
 	unixctl_command_register("lldpd/test",
 				 "libevent|ovsdb <test case no>",
@@ -2373,13 +2369,13 @@ lldpd_ovsdb_init(int argc, char *argv[])
 	proctitle_init(argc, argv);
 	fatal_ignore_sigpipe();
 
-	/* setup feature opcode decode table */
+	/* Setup feature opcode decode table */
 	lldp_ovsdb_setup_decode();
 
-	/* Parse commandline args and get the name of the OVSDB socket. */
+	/* Parse commandline args and get the name of the OVSDB socket */
 	ovsdb_sock = lldp_ovsdb_parse_options(argc, argv, &appctl_path);
 
-	/* Initialize the metadata for the IDL cache. */
+	/* Initialize the metadata for the IDL cache */
 	ovsrec_init();
 	/*
 	 * Fork and return in child process; but don't notify parent of
@@ -2387,23 +2383,23 @@ lldpd_ovsdb_init(int argc, char *argv[])
 	 */
 	daemonize_start();
 
-	/* Create UDS connection for ovs-appctl. */
+	/* Create UDS connection for ovs-appctl */
 	retval = unixctl_server_create(appctl_path, &appctl);
 	if (retval) {
 		exit(EXIT_FAILURE);
 	}
 
-	/* Register the ovs-appctl "exit" command for this daemon. */
+	/* Register the ovs-appctl "exit" command for this daemon */
 	unixctl_command_register("exit", "", 0, 0, ops_lldpd_exit, &exiting);
 
-	/* Create the IDL cache of the dB at ovsdb_sock. */
+	/* Create the IDL cache of the dB at ovsdb_sock */
 	ovsdb_init(ovsdb_sock);
 	free(ovsdb_sock);
 
-	/* Notify parent of startup completion. */
+	/* Notify parent of startup completion */
 	daemonize_complete();
 
-	/* Enable asynch log writes to disk. */
+	/* Enable asynch log writes to disk */
 	vlog_enable_async();
 
 	VLOG_INFO_ONCE("%s (Halon LLDPD Daemon) started", program_name);
@@ -2438,7 +2434,7 @@ del_lldpd_hardware_interface(struct lldpd_hardware *hw)
 
 		/*
 		 * If the ovs rec is also cleaned up
-		 * we can remove the entry else just nullify
+		 * remove the entry else just nullify
 		 * ovsdb record handle
 		 */
 		if (!itf->ifrow) {
@@ -2504,7 +2500,7 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 				hw->h_enable_dir = HARDWARE_ENABLE_DIR_RXTX;
 			}
 
-			/* Check for link_state change. */
+			/* Check for link_state change */
 			bool link_state_bool = false;
 
 			if (itf->ifrow && itf->ifrow->link_state &&
@@ -2545,15 +2541,16 @@ add_vlans_from_ovsdb(char *hw_name)
 }                               /* add_vlans_from_ovsdb */
 
 /*
- * The following set of macros create an array of keys and an array of values
+ * Set of macros create an array of smap keys and an array of smap values
+ *
  * Every call creates a single key-value pair.
- * All strings are written to one buffer. *poffset indexes a
- * key string or next value string at address &pbuf[*poffset]
- * For a key-pair i key_vec[i] ponits to a key string and
- * points to it's value.
+ * All strings are written to a single byte stream. *poffset is a
+ * the byte stream index of next string; either key or value.
+ * Once a key is written to the byte stream, *key_vec would point to it.
+ * Once a val is written to the byte stream, *val_vec would point to it.
  *
  * LLDP_ENCODE_KEY_VAL     - key and value are strings
- * LLDP_ENCODE_KEY_VAL_INT - key is a string and value is an int
+ * LLDP_ENCODE_KEY_VAL_INT - key is a string and value is an integer
  * LLDP_ENCODE_KEY_VAL_DBL - key is a string and value is a double (64b)
  */
 #define LLDP_ENCODE_KEY_VAL(pbuf, poffset, key, val, key_vec, val_vec)	\
@@ -2588,7 +2585,7 @@ add_vlans_from_ovsdb(char *hw_name)
 	} while(0);
 
 /*
- * The functions creates a comma-seperated list of strings,
+ * The functions creates a comma-separated list of strings,
  * one string at a time.
  */
 static int
@@ -2600,7 +2597,7 @@ smap_list_set(char *svec, int *vec_cur, char *val)
 
 /*
  * The functions gets one string at a time from a list of
- * a comma-seperated strings.
+ * a comma-separated strings.
  * Currently, it's unused.
  */
 static int OVS_UNUSED
@@ -2708,7 +2705,7 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 {
 	char *pbuf = NULL;
 	char *decode_str = NULL;
-	char *mgmtip_list[2] = { 0, 0 };    /* interface list and IP list */
+	char *mgmtip_list[2] = { 0, 0 };    /* Interface list and IP list */
 	char *vlan_list[2] = { 0, 0 };      /* vlan name list and vlan id list */
 	char *ppvids_list[2] = { 0, 0 };    /* ppvid cap list and ppvid id list */
 	char *pids_list[2] = { 0, 0 };      /* pi name list and pi length list */
@@ -2948,7 +2945,7 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 	}
 #endif
 
-	/* debug - print key/val arrays */
+	/* Debug - print key/val arrays */
 #ifdef LLDP_NBR_DEBUG
 	VLOG_INFO("log: key_array[] val_array[]");
 	for (i = 0; i < idx; i++) {
