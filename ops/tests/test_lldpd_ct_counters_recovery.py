@@ -22,9 +22,10 @@ import sys
 import time
 import pytest
 import subprocess
-from halonvsi.docker import *
-from halonvsi.halon import *
-from halonutils.halonutil import *
+
+from opsvsi.docker import *
+from opsvsi.opsvsitest import *
+from opsvsiutils.systemutil import *
 
 #
 #
@@ -57,7 +58,7 @@ class myTopo(Topo):
         # connect them together
         self.addLink('s1', 's2')
 
-class lldpTest (HalonTest):
+class lldpTest (OpsVsiTest):
 
     def setupNet (self):
 
@@ -67,9 +68,9 @@ class lldpTest (HalonTest):
         self.net = Mininet(topo=myTopo(hsts = 0, sws = 2,
                                        hopts = self.getHostOpts(),
                                        sopts = self.getSwitchOpts()),
-                                       switch = HalonSwitch,
-                                       host = HalonHost,
-                                       link = HalonLink,
+                                       switch = VsiOpenSwitch,
+                                       host = Host,
+                                       link = OpsVsiLink,
                                        controller = None,
                                        build = True)
 
@@ -122,7 +123,7 @@ class lldpTest (HalonTest):
 
     def lldp_process_restarted (self, switch_number):
         s = self.switch_variable(switch_number)
-        pid = s.cmd("pidof lldpd").strip()
+        pid = s.cmd("pidof ops-lldpd").strip()
         if (switch_number == 1):
             if (pid == self.pid1):
                 return 0, pid
@@ -138,7 +139,7 @@ class lldpTest (HalonTest):
         info("\n### enabling lldp globally for switch %d ###\n" % switch_number)
         s = self.switch_variable(switch_number)
         if (switch_number == 1):
-            self.pid1 = s.cmd("pidof lldpd").strip()
+            self.pid1 = s.cmd("pidof ops-lldpd").strip()
             assert self.pid1 != "", "lldp process not running on switch " + \
                           str(switch_number)
             info("### lldp process id on switch " + \
@@ -146,7 +147,7 @@ class lldpTest (HalonTest):
                 " is " + \
                 str(self.pid1) + " ###\n")
         else:
-            self.pid2 = s.cmd("pidof lldpd").strip()
+            self.pid2 = s.cmd("pidof ops-lldpd").strip()
             assert self.pid2 != "", "lldp process not running on switch " + \
                           str(switch_number)
             info("### lldp process id on switch " + \
@@ -201,7 +202,7 @@ class lldpTest (HalonTest):
              % (switch_number, interface_number))
         s = self.switch_variable(switch_number)
         rxc_before_crash = self.get_lldp_rx_count(switch_number, interface_number)
-        s.cmd("killp lldpd")
+        s.cmd("killp ops-lldpd")
         time.sleep(2)
         rxc_after_crash = self.get_lldp_rx_count(switch_number, interface_number)
         assert rxc_after_crash >= rxc_before_crash, \

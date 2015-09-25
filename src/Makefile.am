@@ -1,6 +1,6 @@
 AM_CFLAGS = -I $(top_srcdir)/include
 
-if OVSDB_INTEGRATION
+if ENABLE_OVSDB
 AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
 endif
 

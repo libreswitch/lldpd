@@ -251,7 +251,7 @@ lldp_ARG_WITH([privsep-group], [Which group to use for privilege separation], [_
 
 #Ovsdb integration
 lldp_ARG_ENABLE([ovsdb], [Ovsdb integration], [no])
-AM_CONDITIONAL(OVSDB_INTEGRATION, test "$enable_ovsdb" = yes)
+AM_CONDITIONAL(ENABLE_OVSDB, test "$enable_ovsdb" = yes)
 if test "$enable_ovsdb" = yes ; then
  # If not forced, check first with pkg-config
     PKG_CHECK_MODULES([OVSDB], [libovscommon], [

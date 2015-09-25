@@ -1,13 +1,17 @@
 AM_CFLAGS = -I $(top_srcdir)/include
 
-if OVSDB_INTEGRATION
+if ENABLE_OVSDB
 AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
 endif
 
 BUILT_SOURCES =
 CLEANFILES =
 
+if ENABLE_OVSDB
+sbin_PROGRAMS = ops-lldpd
+else
 sbin_PROGRAMS = lldpd
+endif
 man_MANS = lldpd.8
 
 noinst_LTLIBRARIES = liblldpd.la
@@ -27,7 +31,7 @@ liblldpd_la_SOURCES  = \
 	pattern.c \
 	probes.d trace.h
 
-if OVSDB_INTEGRATION
+if ENABLE_OVSDB
 liblldpd_la_SOURCES  += \
 	lldpd_ovsdb_if.c lldpd_ovsdb_if_test.c lldpd_ovsdb_if.h
 endif
@@ -38,7 +42,7 @@ liblldpd_la_LIBADD   = \
 	$(top_builddir)/src/libcommon-daemon-client.la \
 	$(top_builddir)/src/libcommon-daemon-lib.la @LIBEVENT_LIBS@
 
-if OVSDB_INTEGRATION
+if ENABLE_OVSDB
 liblldpd_la_LIBADD += \
         -lovscommon \
         -lovsdb
@@ -105,14 +109,23 @@ liblldpd_la_SOURCES += \
 endif
 
 ## lldpd
+if ENABLE_OVSDB
+ops_lldpd_SOURCES = main.c
+ops_lldpd_LDADD   = liblldpd.la @LIBEVENT_LDFLAGS@
+else
 lldpd_SOURCES = main.c
 lldpd_LDADD   = liblldpd.la @LIBEVENT_LDFLAGS@
+endif
 
 # Add SNMP support if needed
 if USE_SNMP
 liblldpd_la_SOURCES += agent.c agent_priv.c agent.h
 liblldpd_la_CFLAGS  += @NETSNMP_CFLAGS@
+if ENABLE_OVSDB
+ops_lldpd_LDADD         += @NETSNMP_LIBS@
+else
 lldpd_LDADD         += @NETSNMP_LIBS@
+endif
 endif
 
 # seccomp support
@@ -142,7 +155,11 @@ probes.h: probes.d
 probes.o: probes.d
 	$(AM_V_GEN)
 	$(AM_V_at)$(DTRACE) -C -G -s $< -o $@
+if ENABLE_OVSDB
+ops_lldpd_LDADD += probes.o
+else
 lldpd_LDADD += probes.o
+endif
 
 lldpd.stp: probes.d $(srcdir)/dtrace2systemtap.awk $(top_builddir)/config.status
 	$(AM_V_GEN)$(AWK) -f $(srcdir)/dtrace2systemtap.awk -v sbindir=$(sbindir) $< > $@ || ( rm -f $@ ; exit 1 )

@@ -58,21 +58,21 @@ VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if_test);
 void
 ovsdb_test_nbr_mgmt_addr_list(struct lldpd_chassis *p_chassis)
 {
-    struct lldpd_mgmt *mgmt;
-    int address1 = 0x09000001;
-    int address2 = 0x09000002;
+	struct lldpd_mgmt *mgmt;
+	int address1 = 0x09000001;
+	int address2 = 0x09000002;
 
-    TAILQ_INIT(&p_chassis->c_mgmt);
-    mgmt =
-        lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address1, sizeof (struct in_addr), 0);
-    if (mgmt != NULL) {
-        TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
-    }
-    mgmt =
-        lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address2, sizeof (struct in_addr), 0);
-    if (mgmt != NULL) {
-        TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
-    }
+	TAILQ_INIT(&p_chassis->c_mgmt);
+	mgmt =
+		lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address1, sizeof (struct in_addr), 0);
+	if (mgmt != NULL) {
+		TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
+	}
+	mgmt =
+		lldpd_alloc_mgmt(LLDPD_AF_IPV4, &address2, sizeof (struct in_addr), 0);
+	if (mgmt != NULL) {
+		TAILQ_INSERT_TAIL(&p_chassis->c_mgmt, mgmt, m_entries);
+	}
 }
 
 /*
@@ -99,71 +99,71 @@ u_int64_t libevent_cnt_start, libevent_cnt_end;
 static void
 test_ovsdb_libevent_loop(int param, char *return_status)
 {
-    void *libevent_arg;
-    u_int64_t libevent_cnt_total;
-    int i;
+	void *libevent_arg;
+	u_int64_t libevent_cnt_total;
+	int i;
 
-    libevent_arg = ovs_libevent_get_arg();
-    if (libevent_arg == NULL) {
-        sprintf(return_status, "%s",
-                "Error: Uninitlized lldpd config pointer");
-        return;
-    }
+	libevent_arg = ovs_libevent_get_arg();
+	if (libevent_arg == NULL) {
+		sprintf(return_status, "%s",
+			"Error: Uninitlized lldpd config pointer");
+		return;
+	}
 
-    if (param == LLDP_TEST_START) {
-        libevent_cnt_start = ovs_libevent_get_counter();
-        for (i = 0; i < LIBEVENT_TEST_CNT; i++) {
-            ovs_libevent_schedule_nbr(libevent_arg);
-        }
-        sprintf(return_status, "%s", "OK");
-    } else {
-        libevent_cnt_end = ovs_libevent_get_counter();
-        libevent_cnt_total = libevent_cnt_end - libevent_cnt_start;
-        if (libevent_cnt_total >= LIBEVENT_TEST_CNT) {
-            VLOG_INFO("libevent unit test done - start=%lu end=%lu",
-                      libevent_cnt_start, libevent_cnt_end);
-            sprintf(return_status, "%s", "OK");
-        } else {
-            sprintf(return_status,
-                    "Error: Missing lldpd events (expcted=%d) (arrived=%d)",
-                    LIBEVENT_TEST_CNT, (int) libevent_cnt_total);
-        }
-    }
+	if (param == LLDP_TEST_START) {
+		libevent_cnt_start = ovs_libevent_get_counter();
+		for (i = 0; i < LIBEVENT_TEST_CNT; i++) {
+			ovs_libevent_schedule_nbr(libevent_arg);
+		}
+		sprintf(return_status, "%s", "OK");
+	} else {
+		libevent_cnt_end = ovs_libevent_get_counter();
+		libevent_cnt_total = libevent_cnt_end - libevent_cnt_start;
+		if (libevent_cnt_total >= LIBEVENT_TEST_CNT) {
+			VLOG_INFO("libevent unit test done - start=%lu end=%lu",
+				  libevent_cnt_start, libevent_cnt_end);
+			sprintf(return_status, "%s", "OK");
+		} else {
+			sprintf(return_status,
+				"Error: Missing lldpd events (expcted=%d) (arrived=%d)",
+				LIBEVENT_TEST_CNT, (int) libevent_cnt_total);
+		}
+	}
 }
 
 static void
 test_parse_options(int argc, const char *argv[], char *return_status)
 {
-    if (argc != 3) {
-        sprintf(return_status, "Wrong argument count - %d", argc);
-        return;
-    }
+	if (argc != 3) {
+		sprintf(return_status, "Wrong argument count - %d", argc);
+		return;
+	}
 
-    if (!strcmp("ovsdb", argv[1])) {
-        test_ovsdb_write_failure(atoi(argv[2]), return_status);
-    } else if (!strcmp("libevent", argv[1])) {
-        test_ovsdb_libevent_loop(atoi(argv[2]), return_status);
-    } else {
-        sprintf(return_status, "Unsupported test - %s", argv[1]);
-    }
+	if (!strcmp("ovsdb", argv[1])) {
+		test_ovsdb_write_failure(atoi(argv[2]), return_status);
+	} else if (!strcmp("libevent", argv[1])) {
+		test_ovsdb_libevent_loop(atoi(argv[2]), return_status);
+	} else {
+		sprintf(return_status, "Unsupported test - %s", argv[1]);
+	}
 }
 
 void
 lldpd_unixctl_test(struct unixctl_conn *conn, int argc OVS_UNUSED,
                    const char *argv[]OVS_UNUSED, void *aux OVS_UNUSED)
 {
-    char return_status[80] = "OK";
-    int i;
+	char return_status[80] = "OK";
+	int i;
 
-    for (i = 0; i < argc; i++) {
-        VLOG_INFO("lldpd/test arg %d - %s", i, argv[i]);
-    }
-    test_parse_options(argc, argv, return_status);
+	for (i = 0; i < argc; i++) {
+		VLOG_INFO("lldpd/test arg %d - %s", i, argv[i]);
+	}
+	test_parse_options(argc, argv, return_status);
 
-    if (!strcmp(return_status, "OK")) {
-        unixctl_command_reply(conn, "OK");
-    } else {
-        unixctl_command_reply_error(conn, return_status);
-    }
+	if (!strcmp(return_status, "OK")) {
+		unixctl_command_reply(conn, "OK");
+	} else {
+		unixctl_command_reply_error(conn, return_status);
+	}
 
 }

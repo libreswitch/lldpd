@@ -22,9 +22,10 @@ import sys
 import time
 import pytest
 import subprocess
-from halonvsi.docker import *
-from halonvsi.halon import *
-from halonutils.halonutil import *
+
+from opsvsi.docker import *
+from opsvsi.opsvsitest import *
+from opsvsiutils.systemutil import *
 
 #
 #
@@ -49,7 +50,7 @@ class myTopo(Topo):
         for s in irange(1, sws):
             switch = self.addSwitch('s%s' % s)
 
-class lldpTest (HalonTest):
+class lldpTest (OpsVsiTest):
 
     def setupNet (self):
 
@@ -59,9 +60,9 @@ class lldpTest (HalonTest):
         self.net = Mininet(topo=myTopo(hsts = 0, sws = 1,
                                        hopts = self.getHostOpts(),
                                        sopts = self.getSwitchOpts()),
-                                       switch = HalonSwitch,
-                                       host = HalonHost,
-                                       link = HalonLink,
+                                       switch = VsiOpenSwitch,
+                                       host = Host,
+                                       link = OpsVsiLink,
                                        controller = None,
                                        build = True)
 
@@ -76,7 +77,7 @@ class lldpTest (HalonTest):
         info("### enabling lldp globally for switch %d ###\n" % switch_number)
         s = self.switch_variable(switch_number)
         if (switch_number == 1):
-            self.pid1 = s.cmd("pidof lldpd").strip()
+            self.pid1 = s.cmd("pidof ops-lldpd").strip()
             assert self.pid1 != "", "lldp process not running on switch " + \
                 str(switch_number)
             info("### lldp process id on switch " + \
@@ -106,14 +107,14 @@ class lldpTest (HalonTest):
     #
     def lldp_libevent (self, switch_number):
         s = self.switch_variable(switch_number)
-        self.pid_start = s.cmd("pidof lldpd").strip()
-        out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 0")
+        self.pid_start = s.cmd("pidof ops-lldpd").strip()
+        out = s.cmd("ovs-appctl -t ops-lldpd lldpd/test libevent 0")
         assert "OK" in out, "switch %d libevent test init FAILED: %s" % (switch_number, out)
         time.sleep(2)
-        self.pid_end = s.cmd("pidof lldpd").strip()
+        self.pid_end = s.cmd("pidof ops-lldpd").strip()
         assert self.pid_start == self.pid_end, "lldpd restarted new pid %s" % self.pid_end
         info("### lldp process id is " + str(self.pid1) + " ###\n")
-        out = s.cmd("ovs-appctl -t lldpd lldpd/test libevent 1").strip()
+        out = s.cmd("ovs-appctl -t ops-lldpd lldpd/test libevent 1").strip()
         assert "OK" in out, "switch %d libevent test FAILED: %s" % (switch_number, out)
         info("### switch %d libevent test PASSED ###\n" % (switch_number))
 
