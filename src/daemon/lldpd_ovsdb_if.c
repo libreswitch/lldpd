@@ -65,7 +65,7 @@
 #include "coverage.h"
 #include "lldpd.h"
 #include "../lldp-const.h"
-#include "openhalon-idl.h"
+#include "openswitch-idl.h"
 #include "lldpd_ovsdb_if.h"
 #include "vlan-bitmap.h"
 

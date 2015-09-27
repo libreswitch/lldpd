@@ -45,7 +45,7 @@
 #include "lldp-const.h"
 
 #ifdef ENABLE_OVSDB
-#include "openhalon-idl.h"
+#include "openswitch-idl.h"
 #endif
 
 #ifdef ENABLE_DOT1
