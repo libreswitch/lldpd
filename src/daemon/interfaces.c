@@ -380,7 +380,7 @@ interfaces_helper_mgmt(struct lldpd *cfg,
 /*
  * When OVSDB is enabled we will not pick management address
  * from kernel interfaces
- * HALON TODO: When OVSDB is enabled management address needs
+ * OPS_TODO: When OVSDB is enabled management address needs
  * to come from ovsdb. This needs to be designed in schema
  */
 #ifndef ENABLE_OVSDB

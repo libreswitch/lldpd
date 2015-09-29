@@ -1,7 +1,7 @@
 AM_CFLAGS = -I $(top_srcdir)/include
 
 if ENABLE_OVSDB
-AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DHALON
+AM_CFLAGS += -I $(LOCAL_SYSROOT_DIR)/usr/local/include/ovs -DOPS
 endif
 
 BUILT_SOURCES =

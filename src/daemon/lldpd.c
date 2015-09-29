@@ -1714,7 +1714,7 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	if ((lchassis = (struct lldpd_chassis*)
 		calloc(1, sizeof(struct lldpd_chassis))) == NULL)
 		fatal("localchassis", NULL);
-#ifdef HALON
+#ifdef OPS
 	lchassis->c_cap_available = LLDP_CAP_BRIDGE | LLDP_CAP_ROUTER;
 #else
 	lchassis->c_cap_available = LLDP_CAP_BRIDGE | LLDP_CAP_WLAN |

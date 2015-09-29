@@ -2172,7 +2172,7 @@ lldpd_run(struct lldpd *cfg)
 		lldpd_stats_run(cfg);
 		daemonize_complete();
 		vlog_enable_async();
-		VLOG_INFO_ONCE("%s (Halon lldpd) %s", program_name, VERSION);
+		VLOG_INFO_ONCE("%s (OPENSWITCH lldpd) %s", program_name, VERSION);
 	}
 
 	/* Create a confirmed database transaction for nbr and config updates */
@@ -2286,7 +2286,7 @@ ovsdb_exit(void)
 static void
 usage(void)
 {
-	printf("%s: Halon lldpd daemon\n"
+	printf("%s: OPENSWITCH lldpd daemon\n"
 	       "usage: %s [OPTIONS] [DATABASE]\n"
 	       "where DATABASE is a socket on which ovsdb-server is listening\n"
 	       "      (default: \"unix:%s/db.sock\").\n",
@@ -2402,7 +2402,7 @@ lldpd_ovsdb_init(int argc, char *argv[])
 	/* Enable asynch log writes to disk */
 	vlog_enable_async();
 
-	VLOG_INFO_ONCE("%s (Halon LLDPD Daemon) started", program_name);
+	VLOG_INFO_ONCE("%s (OPENSWITCH LLDPD Daemon) started", program_name);
 	return;
 }                               /* lldpd_ovsdb_init */
 

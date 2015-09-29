@@ -257,13 +257,12 @@ To embed lldpd into an existing system, there are two point of entries:
     should always be shipped with `lldpd`. On the other hand, programs
     using `liblldpctl.so` can rely on the classic ABI rules.
 
-Why there are 2 similar sounding test & tests directories
----------------------------------------------------------
+Why there are 2 similar sounding tests & ops/tests directories
+--------------------------------------------------------------
 One may ask why there are two similar named directories here.
 "tests" is the original testing directory that has always been
-there.  The "test" directory has been created to run the
-enterprise halon automated tests, since that specific infrastructure
-requires the directory name to be precisely "test".
+there.  The "ops/tests" directory has been created to run the
+openswitch automated tests.
 
 Troubleshooting
 ---------------
