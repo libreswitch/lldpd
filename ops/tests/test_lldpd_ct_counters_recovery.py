@@ -106,6 +106,12 @@ class lldpTest (OpsVsiTest):
         info("\n### bringing interface %d up for switch %d ###\n"
              % (interface_number, switch_number))
         s = self.switch_variable(switch_number)
+        # Configure interface on switch as no routing else the interface
+        # will use the port admin logic to set its own hw_intf_config state
+        s.cmdCLI("configure terminal")
+        s.cmdCLI("interface " + str(interface_number))
+        s.cmdCLI("no routing")
+        s.cmdCLI("exit")
         # set admin state & autoneg
         command = "ovs-vsctl -t 60 set interface " + str(interface_number) + \
                   " user_config:admin=up user_config:autoneg=on"
