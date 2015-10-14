@@ -137,7 +137,7 @@ struct port_data {
 	bool trunk_all_vlans;       /* Indicates whether this port is implicitly
 				     * Trunking all VLANs defined in VLAN table.
 				     */
-	struct lldpd_hardware **interfaces; /* Handle to the hw interface */
+	struct interface_data **interfaces; /* Handle to the hw interface */
 	int n_interfaces;           /* Number of interfaces on this port */
 	const struct ovsrec_port *portrow;  /* Handle to ovsrec tow */
 };
@@ -680,34 +680,26 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 
 			if (ifrow_other_config_lldp_enable_dir) {
 				if (strcmp(ifrow_other_config_lldp_enable_dir,
-					   INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) ==
-				    0) {
+					   INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) == 0) {
 					CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
 									HARDWARE_ENABLE_DIR_OFF,
 									cfg_changed);
-				} else
-					if (strcmp
-					    (ifrow_other_config_lldp_enable_dir,
-					     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX) == 0) {
+				} else if (strcmp (ifrow_other_config_lldp_enable_dir,
+					           INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX) == 0) {
 						CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
 										HARDWARE_ENABLE_DIR_RX,
 										cfg_changed);
-					} else
-						if (strcmp
-						    (ifrow_other_config_lldp_enable_dir,
-						     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX) == 0) {
-							CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
-											HARDWARE_ENABLE_DIR_TX,
-											cfg_changed);
-						} else
-							if (strcmp
-							    (ifrow_other_config_lldp_enable_dir,
-							     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RXTX) ==
-							    0) {
-								CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
-												HARDWARE_ENABLE_DIR_RXTX,
-												cfg_changed);
-							}
+				} else if (strcmp (ifrow_other_config_lldp_enable_dir,
+						  INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX) == 0) {
+						CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
+										HARDWARE_ENABLE_DIR_TX,
+										cfg_changed);
+				} else if (strcmp (ifrow_other_config_lldp_enable_dir,
+					           INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RXTX) == 0) {
+						CHK_AND_APPLY_ITF_CONFIG_CHANGE(cfg, itf,
+										HARDWARE_ENABLE_DIR_RXTX,
+										cfg_changed);
+				}
 				VLOG_DBG("lldp status change on interface %s: %s",
 					 ifrow->name, ifrow_other_config_lldp_enable_dir);
 			} else {
@@ -969,15 +961,15 @@ del_old_port(struct shash_node *sh_node)
 				if (port->interfaces[k])
 					intf =
 						shash_find_data(&all_interfaces,
-								port->interfaces[k]->h_ifname);
+								port->interfaces[k]->hw->h_ifname);
 				if (!intf) {
 					continue;
 				}
 				intf->portdata = NULL;
 				VLOG_INFO("Cleaning up vlan info for Interface %s",
-					  port->interfaces[k]->h_ifname);
-				lldpd_vlan_cleanup(&port->interfaces[k]->h_lport);
-				port->interfaces[k]->h_lport.p_pvid = 0;
+					  port->interfaces[k]->hw->h_ifname);
+				lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
+				port->interfaces[k]->hw->h_lport.p_pvid = 0;
 				rc++;
 			}
 			free(port->interfaces);
@@ -1024,119 +1016,126 @@ add_new_port(const struct ovsrec_port *port_row)
 	return rc;
 }                               /* add_new_port */
 
+static void
+lldpd_reconfigure_port(struct port_data *port)
+{
+	int k;
+	const struct ovsrec_port *row = NULL;
+
+	if (!port) {
+		VLOG_DBG("Port is NULL");
+		return;
+	}
+
+	row = port->portrow;
+
+	/*
+	 * Cleanup old interface list in hashmap and rebuild
+	 *
+	 */
+	if (port->interfaces && port->n_interfaces) {
+		for (k = 0; k < port->n_interfaces; k++) {
+			if(port->interfaces[k] && port->interfaces[k]->hw) {
+				VLOG_INFO("Cleaning up vlan info for Interface %s",
+						   port->interfaces[k]->hw->h_ifname);
+				lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
+			}
+		}
+		free(port->interfaces);
+	}
+
+	port->n_interfaces = row->n_interfaces;
+	port->interfaces = xzalloc(port->n_interfaces * sizeof (struct interface_data *));
+
+	/*
+	 * Get vlan mode
+	 *
+	 */
+	for (k = 0; k < row->n_interfaces; k++) {
+		struct interface_data *intf;
+		struct ovsrec_interface *iface = row->interfaces[k];
+
+		intf = shash_find_data(&all_interfaces, iface->name);
+		intf->portdata = port;
+		/*
+		 * - Add lldp hardware to our structure to allow
+		 *   cleanup of lldp hardware in case row gets deleted.
+		 * - Cleanup existing lldp hardware vlan info
+		 *   since the code will reconstruct this again.
+		 *
+		 */
+		if (intf->hw) {
+			port->interfaces[k] = intf;
+		}
+
+		/* Get vlan_mode first. */
+		if (row->vlan_mode) {
+			if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_ACCESS) == 0) {
+				port->vlan_mode = PORT_VLAN_MODE_ACCESS;
+			} else if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK) == 0) {
+				port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+			} else if (strcmp(row->vlan_mode,
+					   OVSREC_PORT_VLAN_MODE_NATIVE_TAGGED) == 0) {
+				port->vlan_mode = PORT_VLAN_MODE_NATIVE_TAGGED;
+			} else if (strcmp(row->vlan_mode,
+					  OVSREC_PORT_VLAN_MODE_NATIVE_UNTAGGED) == 0) {
+				port->vlan_mode = PORT_VLAN_MODE_NATIVE_UNTAGGED;
+			} else {
+				/* Should not happen.  Assume TRUNK mode to match
+							 * bridge.c. */
+				VLOG_ERR("Invalid VLAN mode %s", row->vlan_mode);
+				port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+			}
+		} else {
+			/* 'vlan_mode' column is not specified.  Follow default
+			 * rules: - If 'tag' contains a value, the port is an
+			 * access port.  - Otherwise, the port is a trunk port. */
+			if (row->tag != NULL) {
+				port->vlan_mode = PORT_VLAN_MODE_ACCESS;
+			} else {
+				port->vlan_mode = PORT_VLAN_MODE_TRUNK;
+			}
+		}
+
+		/*
+		 * Set native vlan config into lldp
+		 * Ignore tag (pvid) column when in trunk mode,
+		 * will be applied only when in
+		 * - access mode
+		 * - native tagged
+		 * - native untagged
+		 *
+		 */
+		if (port->vlan_mode != PORT_VLAN_MODE_TRUNK)
+			set_lldp_pvid(row, intf);
+
+		/*
+		 * Set Trunk Vlans into lldp
+		 * Ignore trunks in access mode
+		 *
+		 */
+		if (port->vlan_mode != PORT_VLAN_MODE_ACCESS)
+			set_lldp_trunk_vlans(row, intf);
+	}
+	return;
+}
+
 static int
 handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
 {
 	struct shash_node *sh_node;
-	int k;
 	int rc = 0;
 
 	/* Check for changes in the port row entries */
 	SHASH_FOR_EACH(sh_node, &all_ports) {
-		const struct ovsrec_port *row = shash_find_data(sh_idl_ports,
+		const struct ovsrec_port *port_row = shash_find_data(sh_idl_ports,
 								sh_node->name);
 
 		/* Check for changes to row */
-		if (OVSREC_IDL_IS_ROW_INSERTED(row, idl_seqno) ||
-		    OVSREC_IDL_IS_ROW_MODIFIED(row, idl_seqno)) {
-			struct port_data *port = sh_node->data;
-
-			/*
-			 * Cleanup old interface list in hashmap and rebuild
-			 *
-			 */
-			if (port->interfaces && port->n_interfaces && port->interfaces) {
-				for (k = 0; k < port->n_interfaces; k++) {
-					VLOG_INFO("Cleaning up vlan info for Interface %s",
-						  port->interfaces[k]->h_ifname);
-					lldpd_vlan_cleanup(&port->interfaces[k]->h_lport);
-				}
-				free(port->interfaces);
-			}
-
-			port->n_interfaces = row->n_interfaces;
-			port->interfaces =
-				xzalloc(port->n_interfaces * sizeof (struct lldpd_hardware *));
-
-			/*
-			 * Get vlan mode
-			 *
-			 */
-			for (k = 0; k < row->n_interfaces; k++) {
-				struct interface_data *intf;
-				struct ovsrec_interface *iface = row->interfaces[k];
-
-				intf = shash_find_data(&all_interfaces, iface->name);
-				intf->portdata = port;
-				/*
-				 * - Add lldp hardware to our structure to allow
-				 *   cleanup of lldp hardware in case row gets deleted.
-				 * - Cleanup existing lldp hardware vlan info
-				 *   since the code will reconstruct this again.
-				 *
-				 */
-				if (intf->hw) {
-					port->interfaces[k] = intf->hw;
-				}
-
-				/* Get vlan_mode first. */
-				if (row->vlan_mode) {
-					if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_ACCESS) ==
-					    0) {
-						port->vlan_mode = PORT_VLAN_MODE_ACCESS;
-					} else
-						if (strcmp(row->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK)
-						    == 0) {
-							port->vlan_mode = PORT_VLAN_MODE_TRUNK;
-						} else
-							if (strcmp
-							    (row->vlan_mode,
-							     OVSREC_PORT_VLAN_MODE_NATIVE_TAGGED) == 0) {
-								port->vlan_mode = PORT_VLAN_MODE_NATIVE_TAGGED;
-							} else
-								if (strcmp
-								    (row->vlan_mode,
-								     OVSREC_PORT_VLAN_MODE_NATIVE_UNTAGGED) == 0) {
-									port->vlan_mode = PORT_VLAN_MODE_NATIVE_UNTAGGED;
-								} else {
-									/* Should not happen.  Assume TRUNK mode to match
-									 * bridge.c. */
-									VLOG_ERR("Invalid VLAN mode %s", row->vlan_mode);
-									port->vlan_mode = PORT_VLAN_MODE_TRUNK;
-								}
-				} else {
-					/* 'vlan_mode' column is not specified.  Follow default
-					 * rules: - If 'tag' contains a value, the port is an
-					 * access port.  - Otherwise, the port is a trunk port. */
-					if (row->tag != NULL) {
-						port->vlan_mode = PORT_VLAN_MODE_ACCESS;
-					} else {
-						port->vlan_mode = PORT_VLAN_MODE_TRUNK;
-					}
-				}
-
-				/*
-				 * Set native vlan config into lldp
-				 * Ignore tag (pvid) column when in trunk mode,
-				 * will be applied only when in
-				 * - access mode
-				 * - native tagged
-				 * - native untagged
-				 *
-				 */
-				if (port->vlan_mode != PORT_VLAN_MODE_TRUNK)
-					set_lldp_pvid(row, intf);
-
-				/*
-				 * Set Trunk Vlans into lldp
-				 * Ignore trunks in access mode
-				 *
-				 */
-				if (port->vlan_mode != PORT_VLAN_MODE_ACCESS)
-					set_lldp_trunk_vlans(row, intf);
-				rc++;
-			}
-
+		if (OVSREC_IDL_IS_ROW_INSERTED(port_row, idl_seqno) ||
+		    OVSREC_IDL_IS_ROW_MODIFIED(port_row, idl_seqno)) {
+			lldpd_reconfigure_port((struct port_data *)sh_node->data);
+			rc++;
 		}
 	}
 	return rc;
@@ -2450,10 +2449,17 @@ del_lldpd_hardware_interface(struct lldpd_hardware *hw)
 void
 add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 {
-	VLOG_DBG("lldpd harware interface %s being added!\n", hw->h_ifname);
+	struct interface_data *itf = NULL;
+	struct shash_node *sh_node = NULL;
+	const char *ifrow_other_config_lldp_enable_dir = NULL;
+	struct port_data *port = NULL;
+	const struct ovsrec_port *portrow = NULL;
+	struct shash_node *port_node;
+	int i = 0;
+
 	if (hw) {
-		struct shash_node *sh_node = shash_find(&all_interfaces, hw->h_ifname);
-		struct interface_data *itf = NULL;
+		VLOG_DBG("lldpd hardware interface %s being added!\n", hw->h_ifname);
+		sh_node = shash_find(&all_interfaces, hw->h_ifname);
 
 		if (!sh_node) {
 			/* Allocate structure to save state information for this
@@ -2470,14 +2476,14 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 				VLOG_DBG("Created local data for interface %s", hw->h_ifname);
 			}
 		} else {
-
 			itf = sh_node->data;
 			itf->hw = hw;
-
+            /* Hash entry exists since ovsdb row has been inserted already */
 			/* Set interface lldp_enable_dir to hw from ovsrec */
-			const char *ifrow_other_config_lldp_enable_dir =
-				smap_get(&itf->ifrow->other_config,
-					 INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+			ifrow_other_config_lldp_enable_dir =
+					     smap_get(&itf->ifrow->other_config,
+					     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+
 			if (ifrow_other_config_lldp_enable_dir) {
 				if (strcmp(ifrow_other_config_lldp_enable_dir,
 					   INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) ==
@@ -2510,6 +2516,26 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 			}
 			itf->hw->h_link_state = link_state_bool;
 
+			/* Apply Port configurations, for now VLAN configs */
+			/* Find port corresponding to interface */
+			OVSREC_PORT_FOR_EACH(portrow, idl) {
+				for(i = 0; i < portrow->n_interfaces; i ++) {
+					if(portrow->interfaces[i] == itf->ifrow) {
+						port_node = shash_find(&all_ports, portrow->name);
+						if(port_node) {
+						    port = (struct port_data *)port_node->data;
+						    break;
+						}
+					}
+				}
+				if (port) {
+					break;
+				}
+			}
+
+			if (port) {
+				lldpd_reconfigure_port(port);
+			}
 		}
 	}
 }                               /* add_new_interface */
