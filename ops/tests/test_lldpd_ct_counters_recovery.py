@@ -1,6 +1,4 @@
-
-#
-# !/usr/bin/python
+#!/usr/bin/python
 #
 # Copyright (C) 2015 Hewlett Packard Enterprise Development LP
 # All Rights Reserved.
@@ -163,15 +161,15 @@ class lldpTest (OpsVsiTest):
                  str(switch_number) +
                  " is " +
                  str(self.pid2) + " ###\n")
-        uuid = s.cmd("ovs-vsctl list system | grep _uuid | " +
+        uuid = s.ovscmd("ovs-vsctl list system | grep _uuid | " +
                      "awk '{print $3}'").strip()
-        s.cmd("ovs-vsctl -t 60 set system %s "
+        s.ovscmd("ovs-vsctl -t 60 set system %s "
               "other_config:lldp_enable=true "
               "other_config:lldp_mgmt_addr=204.152.189.%d "
               "other_config:lldp_tx_interval=5" % (uuid, switch_number))
         time.sleep(1)
-        out = s.cmd("ovs-vsctl list system | grep other_config")
-        assert 'lldp_enable="true"' in out, "lldp not enabled on switch " + \
+        out = s.ovscmd("ovs-vsctl list system | grep other_config")
+        assert 'lldp_enable=true' in out, "lldp not enabled on switch " + \
             str(switch_number)
         info("### lldp configured correctly on switch %d ###\n"
              % switch_number)
@@ -225,8 +223,8 @@ class lldpTest (OpsVsiTest):
             "switch %d interface %d test FAILED: before %d, after %d\n" % \
             (switch_number, interface_number,
              rxc_before_crash, rxc_after_crash)
-        info("### switch %d interface %d test PASSED: before %d, after \
-            %d ###\n"
+        info("### switch %d interface %d test PASSED: before %d, after "
+             "%d ###\n"
              % (switch_number, interface_number,
                 rxc_before_crash, rxc_after_crash))
 
@@ -262,8 +260,8 @@ class Test_lldp:
 
     # the actual test function
     def test_lldp_full(self):
-        info("\n########## Test lldpd counter recovery after restart \
-            ##########\n")
+        info("\n########## Test lldpd counter recovery after restart "
+             "##########\n")
         self.test_var.configure_lldp(1)
         self.test_var.configure_lldp(2)
         self.test_var.bring_interface_up(1, 1)
