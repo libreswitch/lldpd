@@ -582,8 +582,8 @@ validate_ip(char *ip)
 	struct interfaces_address *addr;
 
 	if (ip && strpbrk(ip, "!,*?") == NULL) {
-		if (inet_pton(LLDPD_AF_IPV4, ip, &addr) == 1 ||
-		    inet_pton(LLDPD_AF_IPV6, ip, &addr) == 1)
+		if (inet_pton(lldpd_af(LLDPD_AF_IPV4), ip, &addr) == 1 ||
+		    inet_pton(lldpd_af(LLDPD_AF_IPV6), ip, &addr) == 1)
 			return true;
 	}
 	return false;
@@ -1287,7 +1287,17 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 		lldp_mgmt_pattern = smap_get(&ovs->other_config,
 					     SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
 
+		if (lldp_mgmt_pattern == NULL) {
+			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IP);
+		}
+
+		if (lldp_mgmt_pattern == NULL) {
+			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IPV6);
+		}
+
+
 		if (lldp_mgmt_pattern != NULL) {
+			lldp_mgmt_pattern = strtok((char *) lldp_mgmt_pattern,"/");
 			if (CHANGED_STR
 			    (lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
 				if (validate_ip((char *) lldp_mgmt_pattern)) {
@@ -2239,6 +2249,7 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_other_config);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_lldp_statistics);
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_lldp_statistics);
+	ovsdb_idl_add_column(idl, &ovsrec_system_col_mgmt_intf_status);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_interface);
 	ovsdb_idl_add_column(idl, &ovsrec_interface_col_name);
