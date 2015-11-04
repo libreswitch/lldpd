@@ -132,10 +132,21 @@ lldpd_remote_cleanup(struct lldpd_hardware *hardware,
 		if (!all && expire &&
 		    (now >= port->p_lastupdate + port->p_chassis->c_ttl)) {
 			hardware->h_ageout_cnt++;
-			hardware->h_delete_cnt++;
+#ifndef ENABLE_OVSDB
+                        hardware->h_delete_cnt++;
+#endif
 			del = 1;
 		}
 		if (del) {
+
+#ifdef ENABLE_OVSDB
+			/*
+			* Increment the delete count and clear port entry
+			* for all the port cleanup.
+			*/
+			hardware->h_insert_cnt = 0;
+			hardware->h_delete_cnt++;
+#endif
 			if (expire) expire(hardware, port);
 			/* This TAILQ_REMOVE is dangerous. It should not be
 			 * called while in liblldpctl because we don't have a

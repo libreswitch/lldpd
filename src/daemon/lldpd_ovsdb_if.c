@@ -582,8 +582,8 @@ validate_ip(char *ip)
 	struct interfaces_address *addr;
 
 	if (ip && strpbrk(ip, "!,*?") == NULL) {
-		if (inet_pton(LLDPD_AF_IPV4, ip, &addr) == 1 ||
-		    inet_pton(LLDPD_AF_IPV6, ip, &addr) == 1)
+		if (inet_pton(lldpd_af(LLDPD_AF_IPV4), ip, &addr) == 1 ||
+		    inet_pton(lldpd_af(LLDPD_AF_IPV6), ip, &addr) == 1)
 			return true;
 	}
 	return false;
@@ -1287,7 +1287,17 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 		lldp_mgmt_pattern = smap_get(&ovs->other_config,
 					     SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
 
+		if (lldp_mgmt_pattern == NULL) {
+			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IP);
+		}
+
+		if (lldp_mgmt_pattern == NULL) {
+			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IPV6);
+		}
+
+
 		if (lldp_mgmt_pattern != NULL) {
+			lldp_mgmt_pattern = strtok((char *) lldp_mgmt_pattern,"/");
 			if (CHANGED_STR
 			    (lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
 				if (validate_ip((char *) lldp_mgmt_pattern)) {
@@ -1838,6 +1848,119 @@ lldpd_ovsdb_clear_all_nbrs_run(struct ovsdb_idl *idl)
 	}
 	return (nbr_change);
 }
+/*
+ * Clear LLDP Counters.
+ */
+static bool
+lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
+{
+
+	struct lldpd_hardware *hardware, *hardware_next;
+	const struct ovsrec_interface *ifrow;
+	const struct ovsrec_system *sys_row = NULL;
+	bool counter_change = false;
+	int clear_counter_requested = 0;
+	int last_clear_counter = 0;
+	struct smap smap_status;
+	char clear_counter_str[10] = {0};
+
+	sys_row = ovsrec_system_first(idl);
+	/* Clear LLDP Counters.
+	* if lldp_num_clear_counters_requested>lldp_last_clear_counters_performed
+	* Reset all the counters and clear neighbor table.
+	*/
+	clear_counter_requested = smap_get_int(&sys_row->status,
+			"lldp_num_clear_counters_requested", 0);
+	last_clear_counter = smap_get_int(&sys_row->status,
+			"lldp_last_clear_counters_performed", 0);
+	sprintf(clear_counter_str, "%d", clear_counter_requested);
+	if (clear_counter_requested>last_clear_counter){
+		OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
+			ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
+		}
+		for (hardware = TAILQ_FIRST(&cfg->g_hardware); hardware != NULL;
+			hardware = hardware_next) {
+			hardware_next = TAILQ_NEXT(hardware, h_entries);
+			hardware->h_tx_cnt = 0;
+			hardware->h_rx_cnt = 0;
+			hardware->h_rx_discarded_cnt = 0;
+			hardware->h_rx_unrecognized_cnt = 0;
+			hardware->h_ageout_cnt = 0;
+			hardware->h_drop_cnt = 0;
+			lldpd_remote_cleanup(hardware, NULL, 1);
+			hardware->h_delete_cnt = 0;
+		}
+		/*
+		* Update lldp_last_clear_counters_performed to be equal to last
+		* known lldp_num_clear_counters_requested.
+		*/
+		smap_init(&smap_status);
+		smap_add(&smap_status, "lldp_num_clear_counters_requested",
+			clear_counter_str);
+		smap_add(&smap_status, "lldp_last_clear_counters_performed",
+			clear_counter_str);
+		sys_row = (struct ovsrec_open_vswitch *) ovsrec_open_vswitch_first(idl);
+		ovsrec_open_vswitch_set_status(sys_row, &smap_status);
+		smap_destroy(&smap_status);
+		counter_change = true;
+	}
+	return counter_change;
+}
+/*
+ * Clear LLDP neighbor table.
+ */
+static bool
+lldpd_clear_nbr_table(struct ovsdb_idl *idl, struct lldpd *cfg)
+{
+	struct lldpd_hardware *hardware, *hardware_next;
+	const struct ovsrec_interface *ifrow;
+	const struct ovsrec_system *sys_row = NULL;
+	bool nbr_change = false;
+	int clear_table_requested = 0;
+	int clear_table_performed = 0;
+	struct smap smap_status;
+	char clear_table_str[10] = {0};
+
+	sys_row = ovsrec_system_first(idl);
+	clear_table_requested = smap_get_int(&sys_row->status,
+			"lldp_num_clear_table_requested", 0);
+	clear_table_performed = smap_get_int(&sys_row->status,
+	"lldp_last_clear_table_performed", 0);
+	/*
+	* Clear LLDP neighbor table.
+	* if lldp_num_clear_table_requested is greater
+	* than lldp_last_clear_table_performed then clear all the table.
+	* Scan all nbr tables in OVSDB and look for entries;
+	* Delete any such nbr table from database.
+	*/
+	sprintf(clear_table_str, "%d", clear_table_requested);
+	if (clear_table_requested > clear_table_performed)
+	{
+		OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
+			ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
+		}
+		for (hardware = TAILQ_FIRST(&cfg->g_hardware); hardware != NULL;
+			hardware = hardware_next) {
+			hardware_next = TAILQ_NEXT(hardware, h_entries);
+			lldpd_remote_cleanup(hardware, NULL, 1);
+		}
+		/*
+		*Update lldp_last_clear_table_performed to be equal to last known
+		* lldp_num_clear_table_requested.
+		*/
+		smap_init(&smap_status);
+		smap_add(&smap_status, "lldp_last_clear_table_performed",
+			clear_table_str);
+		smap_add(&smap_status, "lldp_num_clear_table_requested",
+			clear_table_str);
+		sys_row = (struct ovsrec_open_vswitch *) ovsrec_open_vswitch_first(idl);
+		ovsrec_open_vswitch_set_status(sys_row, &smap_status);
+		smap_destroy(&smap_status);
+		nbr_change = true;
+	}
+
+	return nbr_change;
+}
 
 /*
  * The fuction scans all LLDP ports and looks for neighbor
@@ -1865,6 +1988,18 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 	struct shash_node *if_node;
 	struct interface_data *itf;
 
+	/*
+	* Check for clear lldp neighbor info request.
+	*/
+	if(lldpd_clear_nbr_table(idl,cfg)){
+		nbr_change = true;
+	}
+	/*
+	* Check for clear lldp counters request.
+	*/
+	if(lldpd_clear_counters(idl,cfg)){
+		nbr_change = true;
+	}
 	/*
 	 * Scan all hardware interfaces in lldpd and look for updates.
 	 * For any interface that got changed, find a corresponding
@@ -1945,13 +2080,14 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 		}                       /* h_rport_change_opcode != NULL */
 	}                           /* interface loop */
 
-	/*
+        /*
 	 * Scan all nbr tables in OVSDB and look for aged out entries;
 	 * Delete any such nbr table from database.
 	 * This covers any corner case, like port disconnect and restart,
          * in which lldpd fails to report aged out nbr entries in a timely
          * manner.
 	 */
+
 	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
 		last_update_str =
 			smap_get(&ifrow->lldp_neighbor_info, "port_lastupdate");
@@ -2239,6 +2375,9 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_other_config);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_lldp_statistics);
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_lldp_statistics);
+	ovsdb_idl_add_column(idl, &ovsrec_system_col_mgmt_intf_status);
+	ovsdb_idl_add_column(idl, &ovsrec_system_col_status);
+	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_status);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_interface);
 	ovsdb_idl_add_column(idl, &ovsrec_interface_col_name);
