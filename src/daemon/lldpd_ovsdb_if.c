@@ -1218,6 +1218,126 @@ vlan_name_lookup_by_vid(int64_t vid)
 
 }                               /* vlan_name_lookup_by_vid */
 
+static bool
+set_lldp_mgmt_address(const struct ovsrec_system *ovs,
+                      struct lldpd *g_lldp_cfg, bool * send_now)
+{
+	const char *lldp_mgmt_pattern;
+	bool update_now = 0 ;
+	int af;
+	struct in6_addr addr;
+	size_t addr_size;
+
+	if(!ovs) {
+		VLOG_ERR("NULL row passed to %s", __FUNCTION__);
+		return update_now;
+	}
+
+	lldpd_chassis_mgmt_cleanup(LOCAL_CHASSIS(g_lldp_cfg));
+
+	lldp_mgmt_pattern = smap_get(&ovs->other_config,
+				     SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+
+	if (lldp_mgmt_pattern != NULL) {
+		for (af = LLDPD_AF_UNSPEC + 1; af != LLDPD_AF_LAST; af++) {
+			switch (af) {
+			case LLDPD_AF_IPV4:
+				addr_size = sizeof(struct in_addr);
+				break;
+			case LLDPD_AF_IPV6:
+				addr_size = sizeof(struct in6_addr);
+				break;
+			default:
+				assert(0);
+			}
+
+			if (inet_pton(lldpd_af(af), lldp_mgmt_pattern, &addr) == 1)
+				break;
+		}
+
+		if (af == LLDPD_AF_LAST) {
+			VLOG_ERR("Configured lldp mgmt_pattern is not a valid IP addr [%s]", lldp_mgmt_pattern);
+		} else {
+			struct lldpd_mgmt *mgmt;
+			mgmt = lldpd_alloc_mgmt(af, &addr, addr_size, 0);
+
+			if (mgmt == NULL) {
+				VLOG_ERR("Unable to configure lldp mgmt_pattern, out of memory error");
+				return update_now;
+			}
+
+			if (CHANGED_STR(lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
+				if (g_lldp_cfg->g_config.c_mgmt_pattern != NULL)
+					free(g_lldp_cfg->g_config.c_mgmt_pattern);
+
+				g_lldp_cfg->g_config.c_mgmt_pattern = xstrdup(lldp_mgmt_pattern);
+			}
+			VLOG_DBG("Configured lldp mgmt_pattern is [%s]", lldp_mgmt_pattern);
+			TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
+		}
+
+		update_now = 1;
+		*send_now = 1;
+		return update_now;
+	}
+
+	/* If not mgmt address is configured, fetch mgmt interface IPV4 and IPV6 address*/
+	lldp_mgmt_pattern = NULL;
+	lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IP);
+
+	if (lldp_mgmt_pattern) {
+		lldp_mgmt_pattern = strtok((char *) lldp_mgmt_pattern, "/");
+
+		if (lldp_mgmt_pattern && validate_ip((char *) lldp_mgmt_pattern)) {
+			struct lldpd_mgmt *mgmt;
+			af = LLDPD_AF_IPV4;
+			addr_size = sizeof(struct in_addr);
+
+			inet_pton(lldpd_af(af), lldp_mgmt_pattern, &addr);
+
+			mgmt = lldpd_alloc_mgmt(af, &addr, addr_size, 0);
+			if (mgmt == NULL) {
+				VLOG_ERR("Unable to configure lldp IPV4 mgmt_pattern, out of memory error");
+				return update_now;
+			}
+
+			VLOG_DBG("Configured lldp IPV4 mgmt_pattern is [%s]", lldp_mgmt_pattern);
+			TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
+			update_now = 1;
+			*send_now = 1;
+		} else {
+			VLOG_ERR("Configured lldp IPV4 mgmt_pattern is not a valid IP addr [%s]", lldp_mgmt_pattern);
+		}
+	}
+
+	lldp_mgmt_pattern = NULL;
+	lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IPV6);
+
+	if (lldp_mgmt_pattern) {
+		lldp_mgmt_pattern = strtok((char *) lldp_mgmt_pattern, "/");
+		af = LLDPD_AF_IPV6;
+		addr_size = sizeof(struct in6_addr);
+
+		if (lldp_mgmt_pattern && inet_pton(lldpd_af(af), lldp_mgmt_pattern, &addr)) {
+			struct lldpd_mgmt *mgmt;
+
+			mgmt = lldpd_alloc_mgmt(af, &addr, addr_size, 0);
+			if (mgmt == NULL) {
+				VLOG_ERR("Unable to configure lldp IPV6 mgmt_pattern, out of memory error");
+				return update_now;
+			}
+
+			VLOG_DBG("Configured lldp IPV6 mgmt_pattern is [%s]", lldp_mgmt_pattern);
+			TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
+			update_now = 1;
+			*send_now = 1;
+		}else {
+			VLOG_ERR("Configured lldp IPV6 mgmt_pattern is not a valid IP addr [%s]", lldp_mgmt_pattern);
+		}
+	}
+	return update_now;
+}	/* set_lldp_mgmt_address */
+
 /*
  * Configuration management functions
  */
@@ -1232,7 +1352,6 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 	const struct ovsrec_system *ovs;
 	struct ovsdb_idl_txn *lldp_clear_all_nbr_txn = NULL;
 	bool nbr_change;
-	const char *lldp_mgmt_pattern;
 
 	ovs = ovsrec_system_first(idl);
 
@@ -1284,39 +1403,7 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 			*send_now = 1;
 		}
 
-		lldp_mgmt_pattern = smap_get(&ovs->other_config,
-					     SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
-
-		if (lldp_mgmt_pattern == NULL) {
-			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IP);
-		}
-
-		if (lldp_mgmt_pattern == NULL) {
-			lldp_mgmt_pattern = smap_get(&ovs->mgmt_intf_status, SYSTEM_MGMT_INTF_MAP_IPV6);
-		}
-
-
-		if (lldp_mgmt_pattern != NULL) {
-			lldp_mgmt_pattern = strtok((char *) lldp_mgmt_pattern,"/");
-			if (CHANGED_STR
-			    (lldp_mgmt_pattern, g_lldp_cfg->g_config.c_mgmt_pattern)) {
-				if (validate_ip((char *) lldp_mgmt_pattern)) {
-					if (g_lldp_cfg->g_config.c_mgmt_pattern != NULL)
-						free(g_lldp_cfg->g_config.c_mgmt_pattern);
-					g_lldp_cfg->g_config.c_mgmt_pattern =
-						xstrdup(lldp_mgmt_pattern);
-					VLOG_INFO("Configured lldp  mgmt_pattern is [%s]",
-						  lldp_mgmt_pattern);
-					/* Need to call update to update the local chassis */
-					update_now = 1;
-					*send_now = 1;
-				} else {
-					VLOG_INFO(
-						"Configured lldp mgmt_pattern is not a valid IP addr [%s]",
-						lldp_mgmt_pattern);
-				}
-			}
-		}
+		update_now = set_lldp_mgmt_address(ovs, g_lldp_cfg, send_now);
 
 		/* LLDP TLV Configuration */
 		if (lldpd_apply_tlv_configs(ovs,

@@ -369,6 +369,7 @@ interfaces_helper_chassis(struct lldpd *cfg,
 	(!IN6_IS_ADDR_LOOPBACK(a) && !IN6_IS_ADDR_LINKLOCAL(a))
 #endif
 
+#ifndef ENABLE_OVSDB
 /* Find a management address in all available interfaces, even those that were
    already handled. This is a special interface handler because it does not
    really handle interface related information (management address is attached
@@ -492,6 +493,7 @@ interfaces_helper_mgmt(struct lldpd *cfg,
 	}
 #endif
 }
+#endif
 
 /* Fill up port name and description */
 void
