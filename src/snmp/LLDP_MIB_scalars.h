@@ -1,0 +1,19 @@
+#ifndef LLDP_MIB_H
+#define LLDP_MIB_H
+void init_lldpMessageTxInterval(void);
+void init_lldpMessageTxHoldMultiplier(void);
+void init_lldpReinitDelay(void);
+void init_lldpTxDelay(void);
+void init_lldpNotificationInterval(void);
+void init_lldpStatsRemTablesLastChangeTime(void);
+void init_lldpStatsRemTablesInserts(void);
+void init_lldpStatsRemTablesDeletes(void);
+void init_lldpStatsRemTablesDrops(void);
+void init_lldpStatsRemTablesAgeouts(void);
+void init_lldpLocChassisIdSubtype(void);
+void init_lldpLocChassisId(void);
+void init_lldpLocSysName(void);
+void init_lldpLocSysDesc(void);
+void init_lldpLocSysCapSupported(void);
+void init_lldpLocSysCapEnabled(void);
+#endif

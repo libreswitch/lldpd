@@ -1,0 +1,192 @@
+{
+    "lldpMessageTxInterval": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "other_config",
+        "Type": {
+            "Key": "lldp_tx_interval"
+        },
+        "CustomFunction": "lldpMessageTxInterval_custom_function"
+    },
+    "lldpMessageTxHoldMultiplier": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "other_config",
+        "Type": {
+            "Key": "lldp_hold"
+        },
+        "CustomFunction": "lldpMessageTxHoldMultiplier_custom_function"
+    },
+    "lldpReinitDelay": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpTxDelay": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpNotificationInterval": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+
+    "lldpPortConfigTable": {
+        "MibType": "Table",
+        "RootOvsTable": "interface",
+        "CacheTimeout": 30,
+        "SkipFunction": "lldpPortConfigTable_skip_function",
+        "Indexes": {
+            "lldpPortConfigPortNum": {
+                "OvsTable": "interface",
+                "OvsColumn": "name",
+                "Type": {
+                    "Key": null
+                },
+                "CustomFunction": "lldpPortConfigPortNum_custom_function"
+            }
+        },
+        "Columns": {
+            "lldpPortConfigAdminStatus": {
+                "OvsTable": "interface",
+                "OvsColumn": "other_config",
+                "Type": {
+                    "Key": "lldp_status"
+                },
+                "CustomFunction": "lldpPortConfigAdminStatus_custom_function"
+            },
+            "lldpPortConfigNotificationEnable": {
+                "OvsTable": null,
+                "OvsColumn": null,
+                "Type": {
+                    "Key": null
+                },
+                "CustomFunction": null
+            },
+            "lldpPortConfigTLVsTxEnable": {
+                "OvsTable": "system",
+                "OvsColumn": "other_config",
+                "Type": {
+                    "Key": "lldp_tlv_sys_name_enable"
+                },
+                "CustomFunction": "lldpPortConfigTLVsTxEnable_custom_function"
+            }
+        }
+    },
+
+    "lldpStatsRemTablesLastChangeTime": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpStatsRemTablesInserts": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "lldp_statistics",
+        "Type": {
+            "Key": "lldp_table_inserts"
+        },
+        "CustomFunction": "lldpStatsRemTablesInserts_custom_function"
+    },
+    "lldpStatsRemTablesDeletes": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "lldp_statistics",
+        "Type": {
+            "Key": "lldp_table_deletes"
+        },
+        "CustomFunction": "lldpStatsRemTablesDeletes_custom_function"
+    },
+    "lldpStatsRemTablesDrops": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "lldp_statistics",
+        "Type": {
+            "Key": "lldp_table_drops"
+        },
+        "CustomFunction": "lldpStatsRemTablesDrops_custom_function"
+    },
+    "lldpStatsRemTablesAgeouts": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "lldp_statistics",
+        "Type": {
+            "Key": "lldp_table_ageouts"
+        },
+        "CustomFunction": "lldpStatsRemTablesAgeouts_custom_function"
+    },
+
+
+    "lldpLocChassisIdSubtype": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpLocChassisId": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpLocSysName": {
+        "MibType": "Scalar",
+        "OvsTable": "system",
+        "OvsColumn": "hostname",
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpLocSysDesc": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpLocSysCapSupported": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    },
+    "lldpLocSysCapEnabled": {
+        "MibType": "Scalar",
+        "OvsTable": null,
+        "OvsColumn": null,
+        "Type": {
+            "Key": null
+        },
+        "CustomFunction": null
+    }
+}
