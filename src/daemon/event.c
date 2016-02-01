@@ -741,9 +741,29 @@ levent_send_pdu(evutil_socket_t fd, short what, void *arg)
 	struct lldpd_hardware *hardware = arg;
 	int tx_interval = hardware->h_cfg->g_config.c_tx_interval;
 
-	log_debug("event", "trigger sending PDU for port %s",
-	    hardware->h_ifname);
-	lldpd_send(hardware);
+#ifdef ENABLE_OVSDB
+        if (hardware->h_reinit_delay) {
+                /* Reduce one second, because the netlink event handler is
+                   called in a timer callback with timer delay of 1 sec.
+                */
+                struct timeval tv = { hardware->h_reinit_delay - 1, 0 };
+                if (event_add(hardware->h_timer, &tv) == -1) {
+                        log_warnx("event", "unable to re-register timer event for port %s",
+                                    hardware->h_ifname);
+                        event_free(hardware->h_timer);
+                        hardware->h_timer = NULL;
+                        return;
+                }
+                hardware->h_reinit_delay = 0;
+                return;
+        }
+        else
+#endif
+        {
+                log_debug("event", "trigger sending PDU for port %s",
+                        hardware->h_ifname);
+                lldpd_send(hardware);
+        }
 
 #ifdef ENABLE_LLDPMED
 	if (hardware->h_tx_fast > 0)

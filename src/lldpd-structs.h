@@ -448,6 +448,7 @@ struct lldpd_hardware {
 #ifdef ENABLE_OVSDB
 	enum hardware_enable_dir_e h_enable_dir;
 	int h_link_state;
+	int h_reinit_delay;
 	int			h_rport_change_opcode; /* port change opcode */
 #endif
 };

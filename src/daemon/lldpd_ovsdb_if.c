@@ -657,7 +657,7 @@ add_new_db_interface(const struct ovsrec_interface *ifrow)
 
 static int
 handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
-                              struct lldpd *cfg)
+                              const struct ovsrec_system *system, struct lldpd *cfg)
 {
 	struct shash_node *sh_node;
 	int rc = 0;
@@ -719,6 +719,14 @@ handle_interfaces_config_mods(struct shash *sh_idl_interfaces,
 				VLOG_INFO("link state change on interface%s: %s", ifrow->name,
 					  ifrow->link_state);
 				itf->hw->h_link_state = link_state_bool;
+
+				if (link_state_bool && system) {
+                                        itf->hw->h_reinit_delay = smap_get_int(&system->other_config,
+                                                                                SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT,
+                                                                                SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT_DEFAULT);
+                                        VLOG_INFO("Configured lldp reinit time [%d]s on interface%s",
+                                                                        itf->hw->h_reinit_delay, ifrow->name);
+                                }
 				cfg_changed++;
 			}
 		}
@@ -738,8 +746,11 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 {
 	int rc = 0;
 	const struct ovsrec_interface *ifrow;
+	const struct ovsrec_system *system;
 	struct shash sh_idl_interfaces;
 	struct shash_node *sh_node, *sh_next;
+
+	system = ovsrec_system_first(idl);
 
 	/* Collect all the interfaces in the DB. */
 	shash_init(&sh_idl_interfaces);
@@ -781,7 +792,7 @@ lldpd_apply_interface_changes(struct ovsdb_idl *idl,
 	}
 
 	/* Check for interfaces that changed and need handling now */
-	rc = handle_interfaces_config_mods(&sh_idl_interfaces, g_lldp_cfg);
+	rc = handle_interfaces_config_mods(&sh_idl_interfaces, system, g_lldp_cfg);
 
 	/* Destroy the shash of the IDL interfaces */
 	shash_destroy(&sh_idl_interfaces);
