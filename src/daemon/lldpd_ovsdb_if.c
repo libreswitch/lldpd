@@ -1056,6 +1056,9 @@ lldpd_reconfigure_port(struct port_data *port)
 		struct ovsrec_interface *iface = row->interfaces[k];
 
 		intf = shash_find_data(&all_interfaces, iface->name);
+                if (!intf) {
+                    continue;
+                }
 		intf->portdata = port;
 		/*
 		 * - Add lldp hardware to our structure to allow
@@ -1131,6 +1134,9 @@ handle_port_config_mods(struct shash *sh_idl_ports, struct lldpd *cfg)
 		const struct ovsrec_port *port_row = shash_find_data(sh_idl_ports,
 								sh_node->name);
 
+                if (!port_row) {
+			continue;
+		}
 		/* Check for changes to row */
 		if (OVSREC_IDL_IS_ROW_INSERTED(port_row, idl_seqno) ||
 		    OVSREC_IDL_IS_ROW_MODIFIED(port_row, idl_seqno)) {
@@ -1952,6 +1958,10 @@ lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
 	char clear_counter_str[10] = {0};
 
 	sys_row = ovsrec_system_first(idl);
+	if (!sys_row) {
+		return false;
+	}
+
 	/* Clear LLDP Counters.
 	* if lldp_num_clear_counters_requested>lldp_last_clear_counters_performed
 	* Reset all the counters and clear neighbor table.
@@ -2009,6 +2019,9 @@ lldpd_clear_nbr_table(struct ovsdb_idl *idl, struct lldpd *cfg)
 	char clear_table_str[10] = {0};
 
 	sys_row = ovsrec_system_first(idl);
+        if (!sys_row) {
+		return false;
+	}
 	clear_table_requested = smap_get_int(&sys_row->status,
 			"lldp_num_clear_table_requested", 0);
 	clear_table_performed = smap_get_int(&sys_row->status,
