@@ -1,6 +1,6 @@
 
 /*
- * (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+ * (c) Copyright 2016 Hewlett Packard Enterprise Development LP
  *
  *   Licensed under the Apache License, Version 2.0 (the "License"); you may
  *   not use this file except in compliance with the License. You may obtain
@@ -68,6 +68,7 @@
 #include "openswitch-idl.h"
 #include "lldpd_ovsdb_if.h"
 #include "vlan-bitmap.h"
+#include "eventlog.h"
 
 COVERAGE_DEFINE(lldpd_ovsdb_if);
 VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
@@ -1289,8 +1290,9 @@ set_lldp_mgmt_address(const struct ovsrec_system *ovs,
 
 				g_lldp_cfg->g_config.c_mgmt_pattern = xstrdup(lldp_mgmt_pattern);
 			}
-			VLOG_DBG("Configured lldp mgmt_pattern is [%s]", lldp_mgmt_pattern);
-			TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
+                        VLOG_DBG("Configured lldp mgmt_pattern is [%s]", lldp_mgmt_pattern);
+                        log_event("MGMT_PATTERN", EV_KV("value", "%s", lldp_mgmt_pattern));
+                        TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
 		}
 
 		update_now = 1;
@@ -1399,6 +1401,9 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 								c_tx_hold));
 			VLOG_INFO("Configured lldp  tx-timer [%d]",
 				  g_lldp_cfg->g_config.c_tx_interval);
+                        /* Log an event log */
+                        log_event("LLDP_TX_TIMER", EV_KV("value", "%d",
+                            g_lldp_cfg->g_config.c_tx_interval));
 			*send_now = 1;
 		}
 
@@ -1417,6 +1422,8 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 								c_tx_hold));
 			VLOG_INFO("Configured lldp  tx-hold [%d]",
 				  g_lldp_cfg->g_config.c_tx_hold);
+                        log_event("LLDP_TX_HOLD", EV_KV("value", "%d",
+                            g_lldp_cfg->g_config.c_tx_hold));
 			*send_now = 1;
 		}
 
@@ -1504,6 +1511,13 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 					}
 					VLOG_INFO("lldp %s", g_lldp_cfg->g_protocols[i].enabled ?
 						  "enabled" : "disabled");
+                                        /* Log an Event log as well */
+                                        if(g_lldp_cfg->g_protocols[i].enabled) {
+                                            log_event("LLDP_ENABLED", NULL);
+                                        }
+                                        else {
+                                            log_event("LLDP_DISABLED", NULL);
+                                        }
 				}
 				if (!lldp_enabled) {
 					lldp_clear_all_nbr_txn = ovsdb_idl_txn_create(idl);
@@ -2142,6 +2156,8 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 				case LLDPD_AF_NBR_ADD:
 				case LLDPD_AF_NBR_MOD:
 					VLOG_INFO("%s i/f %s ADD/MOD", __FUNCTION__, ifrow->name);
+                                        log_event("LLDP_NEIGHBOUR_ADD", EV_KV("interface", "%s",
+                                            ifrow->name));
 					TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
 						lldp_nbr_update(&smap_nbr, port);
 						ovsrec_interface_set_lldp_neighbor_info(ifrow,
@@ -2154,6 +2170,8 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 
 				case LLDPD_AF_NBR_UPD:
 					VLOG_DBG("%s i/f %s UPD", __FUNCTION__, ifrow->name);
+                                        log_event("LLDP_NEIGHBOUR_UPDATE", EV_KV("interface", "%s",
+                                            ifrow->name));
 					TAILQ_FOREACH(port, &hardware->h_rports, p_entries) {
 						char last_update_s[10];
 
@@ -2173,6 +2191,8 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 
 				case LLDPD_AF_NBR_DEL:
 					VLOG_INFO("%s i/f %s DEL", __FUNCTION__, ifrow->name);
+                                        log_event("LLDP_NEIGHBOUR_DELETE", EV_KV("interface", "%s",
+                                            ifrow->name));
 					ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
 					nbr_change = true;
 					break;
@@ -2650,6 +2670,11 @@ lldpd_ovsdb_init(int argc, char *argv[])
 
 	/* Enable asynch log writes to disk */
 	vlog_enable_async();
+
+        retval = event_log_init("LLDP");
+        if(retval < 0) {
+            VLOG_ERR("Event log initialization failed");
+        }
 
 	VLOG_INFO_ONCE("%s (OPENSWITCH LLDPD Daemon) started", program_name);
 	return;

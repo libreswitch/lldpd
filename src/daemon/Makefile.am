@@ -45,7 +45,8 @@ liblldpd_la_LIBADD   = \
 if ENABLE_OVSDB
 liblldpd_la_LIBADD += \
         -lovscommon \
-        -lovsdb
+        -lovsdb \
+        -lsupportability
 endif
 
 if HOST_OS_LINUX
