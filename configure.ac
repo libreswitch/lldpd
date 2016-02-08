@@ -21,6 +21,7 @@ AC_CONFIG_FILES([Makefile
                  src/daemon/Makefile
 		 src/lib/Makefile
                  src/client/Makefile
+                 src/snmp/Makefile
 	         tests/Makefile
                  osx/Makefile])
 AC_CONFIG_MACRO_DIR([m4])

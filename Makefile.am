@@ -2,7 +2,7 @@ include doxygen.am
 
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS      = src/compat src src/daemon src/lib src/client tests osx
+SUBDIRS      = src/compat src src/daemon src/lib src/client src/snmp tests osx
 EXTRA_DIST   = $(DX_CONFIG) include get-version autogen.sh
 DIST_SUBDIRS = $(SUBDIRS)
 DISTCLEANFILES = ChangeLog
