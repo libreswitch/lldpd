@@ -21,6 +21,7 @@ AC_CONFIG_FILES([Makefile
                  src/daemon/Makefile
 		 src/lib/Makefile
                  src/client/Makefile
+                 src/cli/Makefile
                  src/snmp/Makefile
 	         tests/Makefile
                  osx/Makefile])
@@ -37,7 +38,7 @@ m4_pattern_allow([AM_PROG_AR])
 AM_PROG_AR
 
 # Configure libtool
-LT_INIT
+LT_INIT([disable-static])
 
 #######################
 ### Checks
@@ -144,6 +145,11 @@ AC_CACHE_SAVE
 
 ## Unit tests wich check
 PKG_CHECK_MODULES([CHECK], [check >= 0.9.4], [have_check=yes], [have_check=no])
+
+#Check OPSCLI package and include ops-cli library
+PKG_CHECK_MODULES([OPSCLI], [ops-cli])
+AC_SUBST(Cflags)
+AC_SUBST(Libs)
 
 # Libevent
 lldp_CHECK_LIBEVENT
