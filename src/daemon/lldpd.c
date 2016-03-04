@@ -42,6 +42,7 @@
 #include <grp.h>
 #ifdef ENABLE_OVSDB
 #include "lldpd_ovsdb_if.h"
+#include "LLDP_MIB_traps.h"
 #include "vswitch-idl.h"
 #endif
 
@@ -282,6 +283,35 @@ lldpd_count_neighbors(struct lldpd *cfg)
 	lldpd_display_neighbors(cfg);
 }
 
+#ifdef OPS
+#define MAX_TRAP_STRING_LENGTH 20
+static void
+lldpd_send_lldpRemTablesChange_trap(struct lldpd_hardware *hardware) {
+	struct lldpd_hardware *h;
+	unsigned long inserts = 0;
+	unsigned long deletes = 0;
+	unsigned long drops = 0;
+	unsigned long ageouts = 0;
+	char inserts_string[MAX_TRAP_STRING_LENGTH];
+	char deletes_string[MAX_TRAP_STRING_LENGTH];
+	char ageouts_string[MAX_TRAP_STRING_LENGTH];
+	char drops_string[MAX_TRAP_STRING_LENGTH];
+
+	TAILQ_FOREACH(h, &hardware->h_cfg->g_hardware, h_entries) {
+		inserts += h->h_insert_cnt;
+		deletes += h->h_delete_cnt;
+		ageouts += h->h_ageout_cnt;
+		drops += h->h_drop_cnt;
+	}
+
+	snprintf(inserts_string, MAX_TRAP_STRING_LENGTH, "%lu",inserts);
+	snprintf(deletes_string, MAX_TRAP_STRING_LENGTH, "%lu", deletes);
+	snprintf(ageouts_string, MAX_TRAP_STRING_LENGTH, "%lu", ageouts);
+	snprintf(drops_string, MAX_TRAP_STRING_LENGTH, "%lu", drops);
+	send_lldpRemTablesChange(get_idl(), inserts_string, deletes_string, drops_string, ageouts_string);
+}
+#endif
+
 static void
 notify_clients_deletion(struct lldpd_hardware *hardware,
     struct lldpd_port *rport)
@@ -291,6 +321,10 @@ notify_clients_deletion(struct lldpd_hardware *hardware,
 		rport->p_descr));
 	levent_ctl_notify(hardware->h_ifname, NEIGHBOR_CHANGE_DELETED,
 	    rport);
+#ifdef OPS
+	lldpd_send_lldpRemTablesChange_trap(hardware);
+#endif
+
 #ifdef USE_SNMP
 	agent_notify(hardware, NEIGHBOR_CHANGE_DELETED, rport);
 #endif
@@ -642,6 +676,9 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 			port->p_descr,
 			i));
 		levent_ctl_notify(hardware->h_ifname, NEIGHBOR_CHANGE_UPDATED, port);
+#ifdef OPS
+		lldpd_send_lldpRemTablesChange_trap(hardware);
+#endif
 #ifdef USE_SNMP
 		agent_notify(hardware, NEIGHBOR_CHANGE_UPDATED, port);
 #endif
@@ -651,6 +688,9 @@ lldpd_decode(struct lldpd *cfg, char *frame, int s,
 			port->p_descr,
 			i));
 		levent_ctl_notify(hardware->h_ifname, NEIGHBOR_CHANGE_ADDED, port);
+#ifdef OPS
+		lldpd_send_lldpRemTablesChange_trap(hardware);
+#endif
 #ifdef USE_SNMP
 		agent_notify(hardware, NEIGHBOR_CHANGE_ADDED, port);
 #endif

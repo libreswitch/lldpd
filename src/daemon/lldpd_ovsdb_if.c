@@ -70,6 +70,7 @@
 #include "vlan-bitmap.h"
 #include "eventlog.h"
 #include  <diag_dump.h>
+#include "LLDP_MIB_traps.h"
 
 COVERAGE_DEFINE(lldpd_ovsdb_if);
 VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
@@ -177,6 +178,11 @@ bit_set(uint32_t n)
 		l++;
 	}
 	return l;
+}
+
+const struct ovsdb_idl*
+get_idl(void){
+    return idl;
 }
 
 /*
@@ -2567,6 +2573,9 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_name);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
+
+    /* Registering snmp trap table */
+	init_ovsdb_snmp_notifications(idl);
 
 	/* Register ovs-appctl commands for this daemon */
 	unixctl_command_register("lldpd/dump", "", 0, 0, lldpd_unixctl_dump, NULL);
