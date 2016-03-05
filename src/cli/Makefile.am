@@ -15,10 +15,6 @@
 #
 #  Process this file with Automake to create Makefile.in
 #
-#  TODO: Defect-ID in taiga #614 Remove the libtool .la file from the build package.
-#  Here, the liblldp_cli.la got shipped along with the liblldp_cli.so file
-#  while building the package.
-#
 #  File: Makefile.am
 
 AM_CFLAGS =  ${OPSCLI_CFLAGS}
@@ -31,3 +27,6 @@ lib_LTLIBRARIES = liblldp_cli.la
 
 liblldp_cli_la_SOURCES = lldp_vty.c vtysh_ovsdb_lldp_context.c
 liblldp_cli_la_LDFLAGS =  -avoid-version
+
+install-exec-hook:
+	@(cd $(DESTDIR)$(libdir) && $(RM) $(lib_LTLIBRARIES))
