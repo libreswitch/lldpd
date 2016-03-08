@@ -145,4 +145,5 @@ void add_lldpd_hardware_interface(struct lldpd_hardware *hw);
 void del_lldpd_hardware_interface(struct lldpd_hardware *hw);
 void ovs_libevent_schedule_nbr(void *arg);
 void add_vlans_from_ovsdb(char *hw_name);
+const struct ovsdb_idl* get_idl(void);
 #endif

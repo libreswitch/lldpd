@@ -33,7 +33,7 @@ liblldpd_la_SOURCES  = \
 
 if ENABLE_OVSDB
 liblldpd_la_SOURCES  += \
-	lldpd_ovsdb_if.c lldpd_ovsdb_if_test.c lldpd_ovsdb_if.h
+	lldpd_ovsdb_if.c lldpd_ovsdb_if_test.c lldpd_ovsdb_if.h LLDP_MIB_traps.c LLDP_MIB_traps.h
 endif
 
 liblldpd_la_CFLAGS   = $(AM_CFLAGS) @LIBEVENT_CFLAGS@
@@ -46,7 +46,8 @@ if ENABLE_OVSDB
 liblldpd_la_LIBADD += \
         -lovscommon \
         -lovsdb \
-        -lsupportability
+        -lsupportability \
+        -lnetsnmpmibs -lnetsnmpagent -lnetsnmp
 endif
 
 if HOST_OS_LINUX
