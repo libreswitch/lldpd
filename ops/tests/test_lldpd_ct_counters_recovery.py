@@ -231,9 +231,6 @@ class lldpTest (OpsVsiTest):
 #
 # final "Test_" class
 #
-@pytest.mark.skipif(True, reason="Disabling this testcase "
-                        "due to ops-cli modularization for ops-lldpd."
-                         "will be enabled once ops-lldpd work is done.")
 class Test_lldp:
 
     def setup(self):
