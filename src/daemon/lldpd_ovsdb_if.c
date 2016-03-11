@@ -2894,13 +2894,14 @@ add_vlans_from_ovsdb(char *hw_name)
  * LLDP_ENCODE_KEY_VAL_INT - key is a string and value is an integer
  * LLDP_ENCODE_KEY_VAL_DBL - key is a string and value is a double (64b)
  */
+#define NULL_STR ""
 #define LLDP_ENCODE_KEY_VAL(pbuf, poffset, key, val, key_vec, val_vec)	\
 	do {								\
 		*key_vec = &pbuf[*poffset];				\
 		*poffset += sprintf(&pbuf[*poffset], "%s", key);	\
 		*poffset += 1;						\
 		*val_vec = &pbuf[*poffset];				\
-		*poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%s", val); \
+		*poffset += snprintf(&pbuf[*poffset], MAX_DESCR, "%s", ((val==NULL)?NULL_STR:val)); \
 		*poffset += 1;						\
 	} while(0);
 
