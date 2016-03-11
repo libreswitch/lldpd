@@ -940,8 +940,10 @@ set_lldp_trunk_vlans(const struct ovsrec_port *row,
 
 	int i;
 
-	for (i = 0; i < row->n_trunks; i++) {
-		set_lldp_vlan_name_tlv(row->trunks[i], interface->hw);
+	if (interface->hw) {
+		for (i = 0; i < row->n_trunks; i++) {
+			set_lldp_vlan_name_tlv(row->trunks[i], interface->hw);
+		}
 	}
 }                               /* set_lldp_trunk_vlans */
 
