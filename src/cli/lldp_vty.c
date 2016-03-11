@@ -1859,6 +1859,11 @@ int lldp_ovsdb_if_lldp_nodirstate(const char *ifvalue, const lldp_tx_rx state)
                         INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF);
           validstate = true;
         }
+        else if((strcmp(state_value, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX) == 0) ||
+                (strcmp(state_value, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) == 0))
+        {
+            validstate = true;
+        }
       }
       else if (state == LLDP_RX)
       {
@@ -1873,6 +1878,11 @@ int lldp_ovsdb_if_lldp_nodirstate(const char *ifvalue, const lldp_tx_rx state)
           smap_replace(&smap_other_config, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR,
                         INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF);
           validstate = true;
+        }
+        else if((strcmp(state_value, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX) == 0) ||
+                (strcmp(state_value, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) == 0))
+        {
+            validstate = true;
         }
       }
 
