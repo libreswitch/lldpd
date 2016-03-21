@@ -61,18 +61,20 @@ vtysh_intf_context_lldp_clientcallback(void *p_private)
     if (VTYSH_STR_EQ(data, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX))
     {
       PRINT_INTERFACE_NAME(p_msg->disp_header_cfg, p_msg, if_name)
-      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp reception");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "lldp transmit");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp receive");
     }
     else if (VTYSH_STR_EQ(data, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX))
     {
       PRINT_INTERFACE_NAME(p_msg->disp_header_cfg, p_msg, if_name)
-      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp transmission");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "lldp receive");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp transmit");
     }
     else if (VTYSH_STR_EQ(data, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF))
     {
       PRINT_INTERFACE_NAME(p_msg->disp_header_cfg, p_msg, if_name)
-      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp transmission");
-      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp reception");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp transmit");
+      vtysh_ovsdb_cli_print(p_msg, "%4s%s", "", "no lldp receive");
     }
   }
 
