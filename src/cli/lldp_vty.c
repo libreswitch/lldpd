@@ -1275,17 +1275,17 @@ DEFUN (cli_lldp_show_neighbor_info,
     atom.string = lldp_interface_neighbor_info_keys[4];
     index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
     if(index != UINT_MAX)
-       strncpy(nbr_info[iter].chassis_id, datum->values[index].string, 256);
+       strncpy(nbr_info[iter].chassis_id, datum->values[index].string, LLDP_MAX_BUF_SIZE);
 
     atom.string = lldp_interface_neighbor_info_keys[5];
     index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
     if(index != UINT_MAX)
-       strncpy(nbr_info[iter].port_id, datum->values[index].string, 256);
+       strncpy(nbr_info[iter].port_id, datum->values[index].string, LLDP_MAX_BUF_SIZE);
 
     atom.string = lldp_interface_neighbor_info_keys[6];
     index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
     if(index != UINT_MAX)
-      strncpy(nbr_info[iter].chassis_ttl, datum->values[index].string, 256);
+      strncpy(nbr_info[iter].chassis_ttl, datum->values[index].string, LLDP_STR_CHASSIS_TLV_LENGTH);
 
     iter++;
   }
