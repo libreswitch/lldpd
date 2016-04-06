@@ -465,6 +465,7 @@ class LLDPCliTest(OpsVsiTest):
         return True
 
 
+@pytest.mark.skipif(True, reason="Disabling old tests")
 class Test_lldp_cli:
 
     def setup(self):
