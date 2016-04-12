@@ -10,26 +10,26 @@ void shutdown_lldpPortConfigTable(void);
 typedef netsnmp_data_list lldpPortConfigTable_registration;
 
 typedef struct lldpPortConfigTable_data_s {
-  long lldpPortConfigAdminStatus;
-  long lldpPortConfigNotificationEnable;
-  u_long lldpPortConfigTLVsTxEnable;
+    long lldpPortConfigAdminStatus;
+    long lldpPortConfigNotificationEnable;
+    u_long lldpPortConfigTLVsTxEnable;
 } lldpPortConfigTable_data;
 
 typedef struct lldpPortConfigTable_mib_index_s {
-  long lldpPortConfigPortNum;
+    long lldpPortConfigPortNum;
 } lldpPortConfigTable_mib_index;
 
 typedef struct lldpPortConfigTable_rowreq_ctx_s {
-  netsnmp_index oid_idx;
-  oid oid_tmp[MAX_OID_LEN];
-  lldpPortConfigTable_mib_index tbl_idx;
-  lldpPortConfigTable_data data;
-  u_int rowreq_flags;
-  netsnmp_data_list *lldpPortConfigTable_data_list;
+    netsnmp_index oid_idx;
+    oid oid_tmp[MAX_OID_LEN];
+    lldpPortConfigTable_mib_index tbl_idx;
+    lldpPortConfigTable_data data;
+    u_int rowreq_flags;
+    netsnmp_data_list *lldpPortConfigTable_data_list;
 } lldpPortConfigTable_rowreq_ctx;
 
 typedef struct lldpPortConfigTable_ref_rowreq_ctx_s {
-  lldpPortConfigTable_rowreq_ctx *rowreq_ctx;
+    lldpPortConfigTable_rowreq_ctx *rowreq_ctx;
 } lldpPortConfigTable_ref_rowreq_ctx;
 
 int lldpPortConfigTable_pre_request(
