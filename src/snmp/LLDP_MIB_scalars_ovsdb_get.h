@@ -12,6 +12,7 @@ void ovsdb_get_lldpMessageTxHoldMultiplier(
     struct ovsdb_idl *idl, const struct ovsrec_system *system_row,
     long *lldpMessageTxHoldMultiplier_val_ptr);
 void ovsdb_get_lldpReinitDelay(struct ovsdb_idl *idl,
+                               const struct ovsrec_system *system_row,
                                long *lldpReinitDelay_val_ptr);
 void ovsdb_get_lldpTxDelay(struct ovsdb_idl *idl, long *lldpTxDelay_val_ptr);
 void ovsdb_get_lldpNotificationInterval(struct ovsdb_idl *idl,
