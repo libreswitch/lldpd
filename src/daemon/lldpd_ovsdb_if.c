@@ -2032,12 +2032,12 @@ lldpd_clear_counters(struct ovsdb_idl *idl, struct lldpd *cfg)
 		* Update lldp_last_clear_counters_performed to be equal to last
 		* known lldp_num_clear_counters_requested.
 		*/
-		smap_init(&smap_status);
-		smap_add(&smap_status, "lldp_num_clear_counters_requested",
-			clear_counter_str);
-		smap_add(&smap_status, "lldp_last_clear_counters_performed",
-			clear_counter_str);
 		sys_row = (struct ovsrec_open_vswitch *) ovsrec_open_vswitch_first(idl);
+		smap_clone(&smap_status, &sys_row->status);
+		smap_replace(&smap_status, "lldp_num_clear_counters_requested",
+			clear_counter_str);
+		smap_replace(&smap_status, "lldp_last_clear_counters_performed",
+			clear_counter_str);
 		ovsrec_open_vswitch_set_status(sys_row, &smap_status);
 		smap_destroy(&smap_status);
 		counter_change = true;
