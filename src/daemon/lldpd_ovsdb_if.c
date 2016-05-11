@@ -2545,6 +2545,7 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_lldp_statistics);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_mgmt_intf_status);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_status);
+	ovsdb_idl_add_column(idl, &ovsrec_system_col_hostname);
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_status);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_interface);
