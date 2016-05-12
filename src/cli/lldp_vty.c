@@ -607,7 +607,22 @@ static int lldp_set_mgmt_address(const char *status, boolean set)
   if(set)
     smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR, status);
   else
+  {
+    if(status)
+    {
+      const char *ip = smap_get(&row->other_config,SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+      if(ip)
+      {
+        if(strcmp(ip,status))
+        {
+          vty_out(vty,"Given ip address is not configured as management-address\n");
+          cli_do_config_abort(status_txn);
+          return CMD_OVSDB_FAILURE;
+        }
+      }
+    }
     smap_remove(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+  }
 
   ovsrec_system_set_other_config(row, &smap_other_config);
 
@@ -643,7 +658,7 @@ DEFUN (cli_lldp_set_no_mgmt_address,
        CONFIG_LLDP_STR
        "LLDP management IP address to be sent in TLV\n")
 {
-  return lldp_set_mgmt_address(argv[0], false);
+    return lldp_set_mgmt_address(NULL, false);
 }
 
 DEFUN (cli_lldp_set_no_mgmt_address_arg,
