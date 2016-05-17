@@ -1265,6 +1265,7 @@ lldpd_exit(struct lldpd *cfg)
  *
  * @return PID of running lldpcli or -1 if error.
  */
+#ifndef ENABLE_OVSDB
 static pid_t
 lldpd_configure(int debug, const char *path, const char *ctlname)
 {
@@ -1306,6 +1307,7 @@ lldpd_configure(int debug, const char *path, const char *ctlname)
 	/* Should not be here */
 	return -1;
 }
+#endif
 
 struct intint { int a; int b; };
 static const struct intint filters[] = {
@@ -1439,7 +1441,9 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	char *descr_override = NULL;
 	char *platform_override = NULL;
 	char *lsb_release = NULL;
+#ifndef ENABLE_OVSDB
 	const char *lldpcli = LLDPCLI_PATH;
+#endif
 	int smart = 15;
 	int receiveonly = 0;
 	int ctl;
@@ -1519,10 +1523,12 @@ lldpd_main(int argc, char *argv[], char *envp[])
 			}
 			cidp = strdup(optarg);
 			break;
+#ifndef ENABLE_OVSDB
 		case 'L':
 			if (strlen(optarg)) lldpcli = optarg;
 			else lldpcli = NULL;
 			break;
+#endif
 		case 'k':
 			advertise_version = 0;
 			break;
@@ -1657,12 +1663,14 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	/* Disable SIGHUP, until handlers are installed */
 	signal(SIGHUP, SIG_IGN);
 
+#ifndef ENABLE_OVSDB
 	/* Configuration with lldpcli */
 	if (lldpcli) {
 		log_debug("main", "invoking lldpcli for configuration");
 		if (lldpd_configure(debug, lldpcli, ctlname) == -1)
 			fatal("main", "unable to spawn lldpcli");
 	}
+#endif
 
 #if !defined(ENABLE_OVSDB) && !defined(HOST_OS_X)
 	/* Daemonization, unless started by upstart, systemd or launchd or debug */
@@ -1715,8 +1723,10 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	cfg->g_config.c_cid_pattern = cidp;
 	cfg->g_config.c_iface_pattern = interfaces;
 	cfg->g_config.c_smart = smart;
+#ifndef ENABLE_OVSDB
 	if (lldpcli)
 		cfg->g_config.c_paused = 1;
+#endif
 	cfg->g_config.c_receiveonly = receiveonly;
 	cfg->g_config.c_tx_interval = LLDPD_TX_INTERVAL;
 	cfg->g_config.c_tx_hold = LLDPD_TX_HOLD;
