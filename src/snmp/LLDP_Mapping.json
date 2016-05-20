@@ -6,7 +6,7 @@
         "Type": {
             "Key": "lldp_tx_interval"
         },
-        "CustomFunction": "lldpMessageTxInterval_custom_function"
+        "CustomFunction" : null
     },
     "lldpMessageTxHoldMultiplier": {
         "MibType": "Scalar",
@@ -15,14 +15,14 @@
         "Type": {
             "Key": "lldp_hold"
         },
-        "CustomFunction": "lldpMessageTxHoldMultiplier_custom_function"
+        "CustomFunction": null
     },
     "lldpReinitDelay": {
         "MibType": "Scalar",
-        "OvsTable": null,
-        "OvsColumn": null,
+        "OvsTable": "system",
+        "OvsColumn": "other_config",
         "Type": {
-            "Key": null
+            "Key": "lldp_reinit"
         },
         "CustomFunction": null
     },
@@ -70,10 +70,10 @@
                 "CustomFunction": "lldpPortConfigAdminStatus_custom_function"
             },
             "lldpPortConfigNotificationEnable": {
-                "OvsTable": null,
-                "OvsColumn": null,
+                "OvsTable": "interface",
+                "OvsColumn": "other_config",
                 "Type": {
-                    "Key": null
+                    "Key": "lldp_enable"
                 },
                 "CustomFunction": null
             },
@@ -104,7 +104,7 @@
         "Type": {
             "Key": "lldp_table_inserts"
         },
-        "CustomFunction": "lldpStatsRemTablesInserts_custom_function"
+        "CustomFunction": null
     },
     "lldpStatsRemTablesDeletes": {
         "MibType": "Scalar",
@@ -113,7 +113,7 @@
         "Type": {
             "Key": "lldp_table_deletes"
         },
-        "CustomFunction": "lldpStatsRemTablesDeletes_custom_function"
+        "CustomFunction": null
     },
     "lldpStatsRemTablesDrops": {
         "MibType": "Scalar",
@@ -122,7 +122,7 @@
         "Type": {
             "Key": "lldp_table_drops"
         },
-        "CustomFunction": "lldpStatsRemTablesDrops_custom_function"
+        "CustomFunction": null
     },
     "lldpStatsRemTablesAgeouts": {
         "MibType": "Scalar",
@@ -131,7 +131,7 @@
         "Type": {
             "Key": "lldp_table_ageouts"
         },
-        "CustomFunction": "lldpStatsRemTablesAgeouts_custom_function"
+        "CustomFunction": null
     },
 
 
@@ -188,5 +188,562 @@
             "Key": null
         },
         "CustomFunction": null
-    }
+    },
+    "lldpStatsTxPortTable": {
+		"MibType": "Table",
+		"RootOvsTable": "interface",
+		"CacheTimeout": 30,
+		"SkipFunction": "lldpPortConfigTable_skip_function",
+		"Indexes": {
+			"lldpStatsTxPortNum": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": "lldpPortConfigPortNum_custom_function"
+			}
+		},
+		"Columns": {
+			"lldpStatsTxPortFramesTotal": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_tx"
+				},
+				"CustomFunction": "lldpStatsTxPortFramesTotal_custom_function"
+			}
+		}
+	},
+    "lldpStatsRxPortTable": {
+        "MibType": "Table",
+        "RootOvsTable": "interface",
+        "CacheTimeout": 30,
+        "SkipFunction": "lldpPortConfigTable_skip_function",
+        "Indexes": {
+            "lldpStatsRxPortNum": {
+                "OvsTable": "interface",
+                "OvsColumn": "name",
+                "Type": {
+                     "Key": null
+                },
+                "CustomFunction": "lldpPortConfigPortNum_custom_function"
+            }
+        },
+        "Columns": {
+			"lldpStatsRxPortFramesDiscardedTotal": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_rx_discard"
+				},
+				"CustomFunction": "lldpStatsRxPortFramesDiscardedTotal_custom_function"
+			},
+			"lldpStatsRxPortFramesErrors": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_rx_err"
+				},
+				"CustomFunction": "lldpStatsRxPortFramesErrors_custom_function"
+			},
+			"lldpStatsRxPortFramesTotal": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_rx"
+				},
+				"CustomFunction": "lldpStatsRxPortFramesTotal_custom_function"
+			},
+			"lldpStatsRxPortTLVsDiscardedTotal": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_rx_tlv_discard"
+				},
+				"CustomFunction": "lldpStatsRxPortTLVsDiscardedTotal_custom_function"
+			},
+			"lldpStatsRxPortTLVsUnrecognizedTotal": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_statistics",
+				"Type": {
+					"Key": "lldp_rx_tlv_unknown"
+				},
+				"CustomFunction": "lldpStatsRxPortTLVsUnrecognizedTotal_custom_function"
+			},
+            "lldpStatsRxPortAgeoutsTotal": {
+                  "OvsTable": null,
+                  "OvsColumn": null,
+                  "Type": {
+                       "Key": null
+                  },
+                  "CustomFunction": null
+             }
+        }
+    },
+	"lldpLocPortTable": {
+		"MibType": "Table",
+		"RootOvsTable": "interface",
+		"CacheTimeout": 30,
+		"SkipFunction": "lldpPortConfigTable_skip_function",
+		"Indexes": {
+			"lldpLocPortNum": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": "lldpPortConfigPortNum_custom_function"
+			}
+		},
+		"Columns": {
+			"lldpLocPortIdSubtype": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpLocPortId": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpLocPortDesc": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			}
+		}
+	},
+	"lldpRemTable": {
+		"MibType": "Table",
+		"RootOvsTable": "interface",
+		"CacheTimeout": 30,
+		"SkipFunction": "lldpPortConfigTable_skip_function",
+		"Indexes": {
+			"lldpRemTimeMark": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemLocalPortNum": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": "lldpPortConfigPortNum_custom_function"
+			},
+			"lldpRemIndex": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			}
+		},
+		"Columns": {
+			"lldpRemChassisIdSubtype": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_neighbor_info",
+				"Type": {
+					"Key": "chassis_id_subtype"
+				},
+				"CustomFunction": null
+			},
+			"lldpRemChassisId": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_neighbor_info",
+				"Type": {
+					"Key": "chassis_id"
+				},
+				"CustomFunction": null
+			},
+			"lldpRemPortIdSubtype": {
+				"OvsTable": "interface",
+				"OvsColumn": "lldp_neighbor_info",
+				"Type": {
+					"Key": "port_id_subtype"
+				},
+				"CustomFunction": null
+			},
+			"lldpRemPortId": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemPortDesc": {
+				"OvsTable": "interface",
+				"OvsColumn": "name",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemSysName": {
+				"OvsTable": "system",
+				"OvsColumn": "hostname",
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemSysDesc": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemSysCapSupported": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemSysCapEnabled": {
+				"OvsTable": "system",
+				"OvsColumn": "other_config",
+				"Type": {
+					"Key": "lldp_tlv_sys_cap_enable"
+				},
+				"CustomFunction": "lldpPortConfigTLVsTxEnable_custom_function"
+			}
+		}
+	},
+	"lldpRemManAddrTable": {
+		"MibType": "Table",
+		"RootOvsTable": "interface",
+		"CacheTimeout": 30,
+		"SkipFunction": "lldpPortConfigTable_skip_function",
+		"Indexes": {
+			"lldpRemTimeMark": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpRemLocalPortNum": {
+                                "OvsTable": "interface",
+                                "OvsColumn": "name",
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": "lldpPortConfigPortNum_custom_function"
+                        },
+                        "lldpRemIndex": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+
+			"lldpRemManAddrSubtype": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemManAddr": {
+				"OvsTable": "system",
+				"OvsColumn": "other_config",
+				"Type": {
+					"Key": "lldp_mgmt_add"
+				},
+				"CustomFunction": null
+			}
+		},
+		"Columns": {
+			"lldpRemManAddrIfSubtype": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemManAddrIfId": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			},
+			"lldpRemManAddrOID": {
+				"OvsTable": null,
+				"OvsColumn": null,
+				"Type": {
+					"Key": null
+				},
+				"CustomFunction": null
+			}
+		}
+
+	},
+        "lldpRemUnknownTLVTable": {
+                "MibType": "Table",
+                "RootOvsTable": "interface",
+                "CacheTimeout": 30,
+                "SkipFunction": "lldpPortConfigTable_skip_function",
+                "Indexes": {
+                        "lldpRemTimeMark": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpRemLocalPortNum": {
+                                "OvsTable": "interface",
+                                "OvsColumn": "name",
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": "lldpPortConfigPortNum_custom_function"
+                        },
+                        "lldpRemIndex": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpRemUnknownTLVType": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+				"CustomFunction": null
+                        }
+
+                },
+                "Columns": {
+                        "lldpRemUnknownTLVInfo": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddrIfSubtype": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddrIfId": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddrOID": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+			   }
+                }
+        },
+
+	"lldpRemOrgDefInfoTable": {
+                "MibType": "Table",
+                "RootOvsTable": "interface",
+                "CacheTimeout": 30,
+                "SkipFunction": "lldpPortConfigTable_skip_function",
+                "Indexes": {
+                                 "lldpRemTimeMark": {
+				"OvsTable":null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpRemLocalPortNum": {
+                                "OvsTable": "interface",
+                                "OvsColumn": "name",
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": "lldpPortConfigPortNum_custom_function"
+                        },
+                        "lldpRemIndex": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpRemOrgDefInfoOUI": {
+				"OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction" : null
+			},
+                        "lldpRemOrgDefInfoSubtype": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+
+                        "lldpRemOrgDefInfoIndex": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction" : null
+                        }
+
+                },
+                "Columns": {
+                        "lldpRemOrgDefInfo": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        }
+                }
+        },
+        "lldpConfigManAddrTable": {
+                "MibType": "Table",
+                "RootOvsTable": "system",
+                "CacheTimeout": 30,
+                "SkipFunction": null,
+                "Indexes": {
+                        "lldpLocManAddrSubtype": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+
+                        "lldpLocManAddr": {
+                                "OvsTable": "system",
+                                "OvsColumn": "other_config",
+                                "Type": {
+                                        "Key": "lldp_mgmt_addr"
+                                },
+                                "CustomFunction": null
+                        }
+
+                },
+                "Columns": {
+                        "lldpConfigManAddrPortsTxEnable": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        }
+                }
+        },
+
+	"lldpLocManAddrTable": {
+                "MibType": "Table",
+                "RootOvsTable": "system",
+                "CacheTimeout": 30,
+                "SkipFunction": null,
+                "Indexes": {
+
+                        "lldpLocManAddrSubtype": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddr": {
+                                "OvsTable": "system",
+                                "OvsColumn": "other_config",
+                                "Type": {
+                                        "Key": "lldp_mgmt_addr"
+                                },
+                                "CustomFunction": null
+                        }
+                },
+                "Columns": {
+                        "lldpLocManAddrIfSubtype": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddrIfId": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+                        "lldpLocManAddrOID": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        },
+			 "lldpLocManAddrLen": {
+                                "OvsTable": null,
+                                "OvsColumn": null,
+                                "Type": {
+                                        "Key": null
+                                },
+                                "CustomFunction": null
+                        }
+
+                }
+        }
 }

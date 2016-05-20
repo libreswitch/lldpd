@@ -109,41 +109,83 @@ void lldpPortConfigTLVsTxEnable_custom_function(const struct ovsdb_idl *idl, con
     *lldpPortConfigTLVsTxEnable_val_ptr = ret;
 }
 
-void lldpMessageTxInterval_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpMessageTxInterval_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->other_config, "lldp_tx_interval");
-    smap_to_long(temp, lldpMessageTxInterval_val_ptr);
+void lldpStatsTxPortFramesTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsTxPortFramesTotal_val_ptr){
+    union ovsdb_atom atom;
+    int tx_packets;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
+
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_tx";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    tx_packets = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsTxPortFramesTotal_val_ptr = tx_packets;
 }
 
-void lldpMessageTxHoldMultiplier_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpMessageTxHoldMultiplier_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->other_config, "lldp_hold");
-    smap_to_long(temp, lldpMessageTxHoldMultiplier_val_ptr);
+void lldpStatsRxPortFramesTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesTotal_val_ptr){
+    union ovsdb_atom atom;
+    int rx_packets;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
+
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_rx";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    rx_packets = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsRxPortFramesTotal_val_ptr = rx_packets;
 }
 
-void lldpStatsRemTablesInserts_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesInserts_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->lldp_statistics, "lldp_table_inserts");
-    smap_to_long(temp, lldpStatsRemTablesInserts_val_ptr);
+void lldpStatsRxPortFramesDiscardedTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesDiscardedTotal_val_ptr){
+    union ovsdb_atom atom;
+    int rx_discarded;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
+
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_rx_discared";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    rx_discarded = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsRxPortFramesDiscardedTotal_val_ptr = rx_discarded;
 }
 
-void lldpStatsRemTablesDeletes_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesDeletes_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->lldp_statistics, "lldp_table_deletes");
-    smap_to_long(temp, lldpStatsRemTablesDeletes_val_ptr);
+void lldpStatsRxPortFramesErrors_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesError_val_ptr){
+    union ovsdb_atom atom;
+    int rx_error;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
+
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_rx_err";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    rx_error = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsRxPortFramesError_val_ptr = rx_error;
 }
 
-void lldpStatsRemTablesDrops_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesDrops_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->lldp_statistics, "lldp_table_drops");
-    smap_to_long(temp, lldpStatsRemTablesDrops_val_ptr);
+void lldpStatsRxPortTLVsUnrecognizedTotal_custom_function(
+    struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row,
+    long *lldpStatsRxPortTLVsUnrecognizedTotal_val_ptr){
+
+    union ovsdb_atom atom;
+    int rx_tlv_unknown;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_rx_tlv_unknown";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    rx_tlv_unknown = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsRxPortTLVsUnrecognizedTotal_val_ptr = rx_tlv_unknown;
 }
 
-void lldpStatsRemTablesAgeouts_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesAgeouts_val_ptr) {
-    char *temp = (char*)smap_get(&system_row->lldp_statistics, "lldp_table_ageouts");
-    smap_to_long(temp, lldpStatsRemTablesAgeouts_val_ptr);
-}
+void lldpStatsRxPortTLVsDiscardedTotal_custom_function(struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row,
+    long *lldpStatsRxPortTLVsDiscardedTotal_val_ptr){
+    union ovsdb_atom atom;
+    int rx_tlv_discard;
+    unsigned int index;
+    const struct ovsdb_datum *datum = NULL;
 
-void smap_to_long(const char* in, long *out) {
-    if(in == NULL) {
-        *out = 0;
-    }
-    else {
-        *out = atoi(in);
-    }
+    datum = ovsrec_interface_get_lldp_statistics(interface_row, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
+    atom.string = "lldp_rx_tlv_discard";
+    index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+    rx_tlv_discard = (index == UINT_MAX)? 0 : datum->values[index].integer ;
+    *lldpStatsRxPortTLVsDiscardedTotal_val_ptr = rx_tlv_discard;
 }

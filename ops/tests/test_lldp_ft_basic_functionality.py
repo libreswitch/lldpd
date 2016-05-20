@@ -547,6 +547,7 @@ def lldp_enable_disable(**kwargs):
     return caseReturnCode
 
 
+@pytest.mark.skipif(True, reason="Disabling old tests")
 class Test_lldp_configuration:
     def setup_class (cls):
         # Test object will parse command line and formulate the env

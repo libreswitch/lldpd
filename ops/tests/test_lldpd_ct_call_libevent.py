@@ -126,6 +126,7 @@ class lldpTest (OpsVsiTest):
 #
 # final "Test_" class
 #
+@pytest.mark.skipif(True, reason="Disabling old tests")
 class Test_lldp:
 
     def setup(self):

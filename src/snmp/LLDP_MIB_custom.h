@@ -9,16 +9,20 @@ void lldpPortConfigAdminStatus_custom_function(const struct ovsdb_idl *idl, cons
 
 void lldpPortConfigTLVsTxEnable_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, const struct ovsrec_system *system_row, u_long *lldpPortConfigTLVsTxEnable_val_ptr);
 
-void lldpMessageTxInterval_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpMessageTxInterval_val_ptr);
+void lldpStatsRxPortFramesErrors_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesError_val_ptr);
 
-void lldpMessageTxHoldMultiplier_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpMessageTxHoldMultiplier_val_ptr);
+void lldpStatsRxPortFramesDiscardedTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesDiscardedTotal_val_ptr);
 
-void lldpStatsRemTablesInserts_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesInserts_val_ptr);
+void lldpStatsRxPortFramesTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsRxPortFramesTotal_val_ptr);
 
-void lldpStatsRemTablesDeletes_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesDeletes_val_ptr);
+void lldpStatsTxPortFramesTotal_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpStatsTxPortFramesTotal_val_ptr);
 
-void lldpStatsRemTablesDrops_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesDrops_val_ptr);
+void lldpStatsRxPortTLVsUnrecognizedTotal_custom_function(
+    struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row,
+    long *lldpStatsRxPortTLVsUnrecognizedTotal_val_ptr);
 
-void lldpStatsRemTablesAgeouts_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_system *system_row, long *lldpStatsRemTablesAgeouts_val_ptr);
+void lldpStatsRxPortTLVsDiscardedTotal_custom_function(
+    struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row,
+    long *lldpStatsRxPortTLVsDiscardedTotal_val_ptr);
 
-void smap_to_long(const char* in, long *out);
+void lldpPortConfigPortNum_custom_function(const struct ovsdb_idl *idl, const struct ovsrec_interface *interface_row, long *lldpPortConfigPortNum_val_ptr);

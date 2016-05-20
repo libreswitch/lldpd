@@ -43,6 +43,7 @@
 #ifdef ENABLE_OVSDB
 #include "lldpd_ovsdb_if.h"
 #include "LLDP_MIB_traps.h"
+#include "snmptrap_lib.h"
 #include "vswitch-idl.h"
 #endif
 
@@ -308,7 +309,7 @@ lldpd_send_lldpRemTablesChange_trap(struct lldpd_hardware *hardware) {
 	snprintf(deletes_string, MAX_TRAP_STRING_LENGTH, "%lu", deletes);
 	snprintf(ageouts_string, MAX_TRAP_STRING_LENGTH, "%lu", ageouts);
 	snprintf(drops_string, MAX_TRAP_STRING_LENGTH, "%lu", drops);
-	send_lldpRemTablesChange(get_idl(), inserts_string, deletes_string, drops_string, ageouts_string);
+	send_lldpRemTablesChange(SWNS_NAMESPACE, get_idl(), inserts_string, deletes_string, drops_string, ageouts_string);
 }
 #endif
 
