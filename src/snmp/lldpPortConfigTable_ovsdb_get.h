@@ -1,6 +1,10 @@
 #ifndef LLDPPORTCONFIGTABLE_OVSDB_GET_H
 #define LLDPPORTCONFIGTABLE_OVSDB_GET_H
 
+#include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
+#include <net-snmp/net-snmp-includes.h>
+#include <net-snmp/agent/net-snmp-agent-includes.h>
 #include "vswitch-idl.h"
 #include "ovsdb-idl.h"
 void ovsdb_get_lldpPortConfigPortNum(
