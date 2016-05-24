@@ -246,18 +246,22 @@ decode_property(char *decode_str, uint32_t property, uint32_t category)
 static void
 decode_nw_addr(char *decode_str, char *user_str, int key_len)
 {
-	int i, n, size;
+	int i, n;
 	unsigned char c;
 
 	n = 0;
-	size = strlen(user_str);
-	for (i = 0; i < key_len; i++) {
-		c = i < size ? user_str[i] : 0;
-		if (i < key_len - 1)
-			n += sprintf(&decode_str[n], "%02x:", c);
-		else
-			sprintf(&decode_str[n], "%02x", c);
-	}
+        if (key_len == ETHER_ADDR_LEN) {
+            for (i = 0; i < key_len; i++) {
+                c = user_str[i];
+                if (i < key_len - 1)
+                    n += sprintf(&decode_str[n], "%02x:", c);
+                else
+                    sprintf(&decode_str[n], "%02x", c);
+            }
+        }
+        else {
+            VLOG_ERR("Invalid length = %d", key_len);
+        }
 }
 
 /*
@@ -3167,7 +3171,12 @@ lldp_nbr_update(void *smap, struct lldpd_port *p_nbr)
 	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID_SUBTYPE, decode_str,
 			    &key_array[idx], &val_array[idx++]);
 
-	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID, p_nbr->p_id,
+	if (p_nbr->p_id_subtype == LLDP_PORTID_SUBTYPE_LLADDR) {
+		decode_nw_addr(decode_str, p_nbr->p_id, p_nbr->p_id_len);
+	} else {
+		sprintf(decode_str, "%s", p_nbr->p_id);
+	}
+	LLDP_ENCODE_KEY_VAL(pbuf, &offset, LLDP_NBR_PORT_ID, decode_str,
 			    &key_array[idx], &val_array[idx++]);
 	LLDP_ENCODE_KEY_VAL_INT(pbuf, &offset, LLDP_NBR_PORT_ID_LEN,
 				p_nbr->p_id_len, &key_array[idx],
