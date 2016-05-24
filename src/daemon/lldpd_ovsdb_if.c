@@ -1090,7 +1090,6 @@ lldpd_reconfigure_port(struct port_data *port)
                 if (!intf) {
                     continue;
                 }
-		intf->portdata = port;
 		/*
 		 * - Add lldp hardware to our structure to allow
 		 *   cleanup of lldp hardware in case row gets deleted.
@@ -1099,6 +1098,7 @@ lldpd_reconfigure_port(struct port_data *port)
 		 *
 		 */
 		if (intf->hw) {
+			intf->portdata = port;
 			port->interfaces[k] = intf;
 		}
 
@@ -2800,11 +2800,14 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 		} else {
 			itf = sh_node->data;
 			itf->hw = hw;
+			itf->portdata = NULL;
             /* Hash entry exists since ovsdb row has been inserted already */
 			/* Set interface lldp_enable_dir to hw from ovsrec */
-			ifrow_other_config_lldp_enable_dir =
-					     smap_get(&itf->ifrow->other_config,
-					     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+			if (itf->ifrow) {
+				ifrow_other_config_lldp_enable_dir =
+						     smap_get(&itf->ifrow->other_config,
+						     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+			}
 
 			if (ifrow_other_config_lldp_enable_dir) {
 				if (strcmp(ifrow_other_config_lldp_enable_dir,
@@ -2856,6 +2859,7 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 			}
 
 			if (port) {
+				itf->portdata = port;
 				lldpd_reconfigure_port(port);
 			}
 		}
