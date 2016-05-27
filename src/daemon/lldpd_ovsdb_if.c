@@ -88,6 +88,7 @@ VLOG_DEFINE_THIS_MODULE(lldpd_ovsdb_if);
 #define BUF_LEN 16000
 #define REM_BUF_LEN (buflen - 1 - strlen(buf))
 #define MAX_ERR_STR_LEN 255
+#define DEFAULT_INTERFACE "bridge_normal"
 
 static struct ovsdb_idl *idl;
 static unsigned int idl_seqno;
@@ -2368,32 +2369,34 @@ lldpd_dump(char* buf, int buflen)
 			first_row_done++;
 		}
 
-		strncat(buf, itf->name, REM_BUF_LEN);
-		if (itf->ifrow)
-			strncat(buf, "\t\t|    Yes", REM_BUF_LEN);
-		else
-			strncat(buf, "\t\t|    No\t", REM_BUF_LEN);
-		if (itf->hw) {
-			strncat(buf, "\t\t|    Yes", REM_BUF_LEN);
-			if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_OFF)
-				strncat(buf, "\t\t|    off", REM_BUF_LEN);
-			if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_TX)
-				strncat(buf, "\t\t|    tx", REM_BUF_LEN);
-			if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_RX)
-				strncat(buf, "\t\t|    rx", REM_BUF_LEN);
-			if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_RXTX)
-				strncat(buf, "\t\t|    rxtx", REM_BUF_LEN);
-		} else
-			strncat(buf, "\t\t|No\t\t|", REM_BUF_LEN);
-
-		if (itf->hw) {
-			if (itf->hw->h_link_state == INTERFACE_LINK_STATE_UP)
-				strncat(buf, "\t\t|    up", REM_BUF_LEN);
+                /* Display information for all interfaces except bridge_normal */
+		if (strcmp(itf->name, DEFAULT_INTERFACE) != 0) {
+			strncat(buf, itf->name, REM_BUF_LEN);
+			if (itf->ifrow)
+				strncat(buf, "\t\t|    Yes", REM_BUF_LEN);
 			else
-				strncat(buf, "\t\t|    down", REM_BUF_LEN);
-		}
+				strncat(buf, "\t\t|    No\t", REM_BUF_LEN);
+			if (itf->hw) {
+				strncat(buf, "\t\t|    Yes", REM_BUF_LEN);
+				if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_OFF)
+					strncat(buf, "\t\t|    off", REM_BUF_LEN);
+				if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_TX)
+					strncat(buf, "\t\t|    tx", REM_BUF_LEN);
+				if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_RX)
+					strncat(buf, "\t\t|    rx", REM_BUF_LEN);
+				if (itf->hw->h_enable_dir == HARDWARE_ENABLE_DIR_RXTX)
+					strncat(buf, "\t\t|    rxtx", REM_BUF_LEN);
+			} else
+				strncat(buf, "\t\t|    No\t\t\t|", REM_BUF_LEN);
+			if (itf->hw) {
+				if (itf->hw->h_link_state == INTERFACE_LINK_STATE_UP)
+					strncat(buf, "\t\t|    up", REM_BUF_LEN);
+				else
+					strncat(buf, "\t\t|    down", REM_BUF_LEN);
+			}
 
-		strncat(buf, "\n", REM_BUF_LEN);
+			strncat(buf, "\n", REM_BUF_LEN);
+		}
 	}
 }
 
