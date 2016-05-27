@@ -2511,10 +2511,12 @@ lldpd_run(struct lldpd *cfg)
 			/* Sets the 'status_txn_try_again' if the transaction fails. */
 			if (status == TXN_SUCCESS) {
 				confirm_txn_try_again = false;
+			} else if (status == TXN_TRY_AGAIN) {
+				confirm_txn_try_again = true;
 			} else {
 				VLOG_INFO("%s OVSDB write failure status= %d", __FUNCTION__,
 					  status);
-				confirm_txn_try_again = true;
+				confirm_txn_try_again = false;
 			}
 		}
 	}
