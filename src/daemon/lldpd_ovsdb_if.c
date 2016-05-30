@@ -2370,7 +2370,7 @@ lldpd_dump(char* buf, int buflen)
 		}
 
                 /* Display information for all interfaces except bridge_normal */
-		if (strcmp(itf->name, DEFAULT_INTERFACE) != 0) {
+		if (strncmp(itf->name, DEFAULT_INTERFACE, strlen(DEFAULT_INTERFACE)) != 0) {
 			strncat(buf, itf->name, REM_BUF_LEN);
 			if (itf->ifrow)
 				strncat(buf, "\t\t|    Yes", REM_BUF_LEN);
