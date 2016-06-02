@@ -1610,10 +1610,12 @@ lldpd_main(int argc, char *argv[], char *envp[])
 	}
 	smart = filters[i].b;
 
+#ifndef ENABLE_OVSDB
 	log_init(debug, __progname);
 	tzset();		/* Get timezone info before chroot */
 
 	log_debug("main", "lldpd starting...");
+#endif
 
 	/* Grab uid and gid to use for priv sep */
 #ifdef ENABLE_PRIVSEP
