@@ -1728,6 +1728,32 @@ DEFUN (cli_lldp_show_local_device,
     return CMD_SUCCESS;
 }
 
+/*-----------------------------------------------------------------------------
+| Function : is_parent_interface_split
+| Responsibility : Check if parent interface has been split
+| Parameters :
+|   const struct ovsrec_interface *parent_iface : Parent Interface row data
+|                                                 for the specific child
+| Return : bool : returns true/false
+-----------------------------------------------------------------------------*/
+static bool
+is_parent_interface_split(const struct ovsrec_interface *parent_iface)
+{
+    const char *lanes_split_value = NULL;
+    bool is_split = false;
+
+    lanes_split_value = smap_get(&parent_iface->user_config,
+                               INTERFACE_USER_CONFIG_MAP_LANE_SPLIT);
+    if ((lanes_split_value != NULL) &&
+        (strcmp(lanes_split_value,
+                INTERFACE_USER_CONFIG_MAP_LANE_SPLIT_SPLIT) == 0))
+      {
+        /* Parent interface is split.
+         * Display child interface configurations. */
+        is_split = true;
+      }
+    return is_split;
+}
 
 /* set LLDP interface state as TX, RX or both */
 int lldp_ovsdb_if_lldp_state(const char *ifvalue, const lldp_tx_rx state) {
@@ -1756,6 +1782,14 @@ int lldp_ovsdb_if_lldp_state(const char *ifvalue, const lldp_tx_rx state) {
   {
     if(strcmp(row->name, ifvalue) == 0)
     {
+      if (is_parent_interface_split(row))
+      {
+          vty_out(vty,
+                  "This interface has been split. Operation"
+                  " not allowed%s", VTY_NEWLINE);
+          cli_do_config_abort (status_txn);
+          return 1;
+      }
       state_value = smap_get(&row->other_config, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
       smap_clone(&smap_other_config, &row->other_config);
       if(state == LLDP_TX)
@@ -1857,6 +1891,14 @@ int lldp_ovsdb_if_lldp_nodirstate(const char *ifvalue, const lldp_tx_rx state)
   {
     if(strcmp(row->name, ifvalue) == 0)
     {
+     if (is_parent_interface_split(row))
+      {
+          vty_out(vty,
+                  "This interface has been split. Operation"
+                  " not allowed%s", VTY_NEWLINE);
+          cli_do_config_abort (status_txn);
+          return 1;
+      }
       ifexists = true;
       state_value = smap_get(&row->other_config, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
       smap_clone(&smap_other_config, &row->other_config);
