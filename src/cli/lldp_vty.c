@@ -1366,7 +1366,9 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
     "chassis_capability_enabled",
     "chassis_name",
     "chassis_description",
-    "mgmt_ip_list"
+    "mgmt_ip_list",
+    "port_description",
+    "port_pvid"
   };
 
   unsigned int index;
@@ -1427,9 +1429,18 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
         vty_out(vty, "Neighbor Port-ID               : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
+        atom.string = lldp_interface_neighbor_info_keys[12];
+        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+        vty_out(vty, "Neighbor Port-Description      : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
+        atom.string = lldp_interface_neighbor_info_keys[13];
+        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+        vty_out(vty, "Neighbor Port VLAN Id          : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
         atom.string = lldp_interface_neighbor_info_keys[6];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
         vty_out(vty, "TTL                            : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
         break;
      }
   }
