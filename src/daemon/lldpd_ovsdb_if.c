@@ -946,8 +946,8 @@ set_lldp_trunk_vlans(const struct ovsrec_port *row,
 	int i;
 
 	if (interface->hw) {
-		for (i = 0; i < row->n_trunks; i++) {
-			set_lldp_vlan_name_tlv(row->trunks[i], interface->hw);
+		for (i = 0; i < row->n_vlan_trunks; i++) {
+			set_lldp_vlan_name_tlv(ops_port_get_trunks(row, i), interface->hw);
 		}
 	}
 }                               /* set_lldp_trunk_vlans */
@@ -962,8 +962,8 @@ set_lldp_pvid(const struct ovsrec_port *row, struct interface_data *interface)
 	}
 
 	/* Get native VID from 'tag' column */
-	if ((row->tag != NULL)) {
-		native_vid = (int) *row->tag;
+	if ((row->vlan_tag != NULL)) {
+		native_vid = ops_port_get_tag(row);
 		if (interface->hw) {
 			interface->hw->h_lport.p_pvid = native_vid;
 			VLOG_INFO("Setting pvid %d", interface->hw->h_lport.p_pvid);
@@ -1125,7 +1125,7 @@ lldpd_reconfigure_port(struct port_data *port)
 			/* 'vlan_mode' column is not specified.  Follow default
 			 * rules: - If 'tag' contains a value, the port is an
 			 * access port.  - Otherwise, the port is a trunk port. */
-			if (row->tag != NULL) {
+			if (row->vlan_tag != NULL) {
 				port->vlan_mode = PORT_VLAN_MODE_ACCESS;
 			} else {
 				port->vlan_mode = PORT_VLAN_MODE_TRUNK;
@@ -2583,8 +2583,8 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_add_column(idl, &ovsrec_port_col_name);
 	ovsdb_idl_add_column(idl, &ovsrec_port_col_interfaces);
 	ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_mode);
-	ovsdb_idl_add_column(idl, &ovsrec_port_col_tag);
-	ovsdb_idl_add_column(idl, &ovsrec_port_col_trunks);
+	ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_tag);
+	ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_trunks);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
 	ovsdb_idl_add_column(idl, &ovsrec_vlan_col_name);

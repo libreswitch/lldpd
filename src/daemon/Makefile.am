@@ -47,7 +47,7 @@ liblldpd_la_LIBADD += \
         -lovscommon \
         -lovsdb \
         -lsupportability \
-        -lnetsnmpmibs -lnetsnmpagent -lnetsnmp -lops_snmptrap
+        -lnetsnmpmibs -lnetsnmpagent -lnetsnmp -lops_snmptrap -lopsutils
 endif
 
 if HOST_OS_LINUX

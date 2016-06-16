@@ -1721,55 +1721,55 @@ DEFUN (cli_lldp_show_local_device,
 
         vlan_name = NULL;
         if (portrow->vlan_mode && strcmp(portrow->vlan_mode, OVSREC_PORT_VLAN_MODE_TRUNK) != 0) {
-            if (portrow->tag) {
-                vlan_name = lldp_get_vlan_name(*portrow->tag);
+            if (portrow->vlan_tag) {
+                vlan_name = lldp_get_vlan_name(ops_port_get_tag(portrow));
             }
 
             vty_out(vty, "Port VLAN Id      : ");
-            if (portrow->tag)
-                vty_out(vty, "%lu%s", *portrow->tag, VTY_NEWLINE);
+            if (portrow->vlan_tag)
+                vty_out(vty, "%lu%s", (int64_t)ops_port_get_tag(portrow), VTY_NEWLINE);
 
             if (strcmp(portrow->vlan_mode, OVSREC_PORT_VLAN_MODE_ACCESS) == 0) {
                 vty_out(vty, "VLAN-Ids          : ");
-                if (portrow->tag)
-                    vty_out(vty, "%lu%s", *portrow->tag, VTY_NEWLINE);
+                if (portrow->vlan_tag)
+                    vty_out(vty, "%lu%s", (int64_t)ops_port_get_tag(portrow), VTY_NEWLINE);
 
                 vty_out(vty, "VLAN Name         : %s%s", (vlan_name ? vlan_name : ""), VTY_NEWLINE);
                 vty_out(vty, "%s", VTY_NEWLINE);
             } else {
                 vty_out(vty, "VLAN-Ids          : ");
 
-                if (portrow->tag)
-                    vty_out(vty, "%lu", *portrow->tag);
+                if (portrow->vlan_tag)
+                    vty_out(vty, "%lu", (int64_t)ops_port_get_tag(portrow));
 
 
-                for (i = 0; i < portrow->n_trunks; i++) {
-                    if (portrow->tag && *portrow->tag == portrow->trunks[i])
+                for (i = 0; i < portrow->n_vlan_trunks; i++) {
+                    if (portrow->vlan_tag && ops_port_get_tag(portrow) == ops_port_get_trunks(portrow, i))
                         continue;
 
-                    if (portrow->tag || i )
+                    if (portrow->vlan_tag || i )
                         vty_out(vty, ", ");
 
 
-                    vty_out(vty, "%lu", portrow->trunks[i]);
+                    vty_out(vty, "%lu", (int64_t)ops_port_get_trunks(portrow, i));
                 }
 
                 vty_out(vty, " %s", VTY_NEWLINE);
                 vty_out(vty, "VLAN Name         : ");
 
-                if (portrow->tag) {
-                    vlan_name = lldp_get_vlan_name(*portrow->tag);
+                if (portrow->vlan_tag) {
+                    vlan_name = lldp_get_vlan_name(ops_port_get_tag(portrow));
                     vty_out(vty, "%s%s", (vlan_name ? vlan_name : ""), VTY_NEWLINE);
                 }
 
-                for (i = 0; i < portrow->n_trunks; i++) {
-                    if (portrow->tag && *portrow->tag == portrow->trunks[i])
+                for (i = 0; i < portrow->n_vlan_trunks; i++) {
+                    if (portrow->vlan_tag && ops_port_get_tag(portrow) == ops_port_get_trunks(portrow, i))
                         continue;
 
-                    if ( portrow->tag || i )
+                    if ( portrow->vlan_tag || i )
                         vty_out(vty, ", ");
 
-                    vlan_name = lldp_get_vlan_name(portrow->trunks[i]);
+                    vlan_name = lldp_get_vlan_name(ops_port_get_trunks(portrow, i));
                     vty_out(vty, "%s", (vlan_name ? vlan_name : ""));
                 }
 
@@ -1780,18 +1780,18 @@ DEFUN (cli_lldp_show_local_device,
 
             vty_out(vty, "Port VLAN Id      :%s", VTY_NEWLINE);
             vty_out(vty, "VLAN-Ids          : ");
-            for (i = 0; i < portrow->n_trunks; i++) {
+            for (i = 0; i < portrow->n_vlan_trunks; i++) {
                 if ( i )
                     vty_out(vty, ", ");
-                vty_out(vty, "%lu", portrow->trunks[i]);
+                vty_out(vty, "%lu", (int64_t)ops_port_get_trunks(portrow, i));
             }
 
             vty_out(vty, " %s", VTY_NEWLINE);
             vty_out(vty, "VLAN Name         : ");
-            for (i = 0; i < portrow->n_trunks; i++) {
+            for (i = 0; i < portrow->n_vlan_trunks; i++) {
                 if ( i )
                     vty_out(vty, ", ");
-                vlan_name = lldp_get_vlan_name(portrow->trunks[i]);
+                vlan_name = lldp_get_vlan_name(ops_port_get_trunks(portrow, i));
                 vty_out(vty, "%s", (vlan_name ? vlan_name : ""));
             }
 

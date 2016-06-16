@@ -24,6 +24,8 @@
 #ifndef _LLDP_VTY_H
 #define _LLDP_VTY_H
 
+#include "ops-utils.h"
+
 #define CONFIG_LLDP_STR "Configure LLDP parameters\n"
 #define SHOW_LLDP_STR "Show various LLDP settings\n"
 #define OVSDB_LLDP_INTF_ROW_FETCH_ERROR "No interface found"
