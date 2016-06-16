@@ -24,6 +24,7 @@
 #define LLDPD_OVSDB_H 1
 
 #include "lldpd.h"
+#include "ops-utils.h"
 
 enum {
 	LLDP_DECODE_LIST,
