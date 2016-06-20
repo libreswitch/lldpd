@@ -30,6 +30,9 @@
 #include <linux/sockios.h>
 #include <linux/if_packet.h>
 #include <linux/ethtool.h>
+#ifdef ENABLE_OVSDB
+#include "lldpd_ovsdb_if.h"
+#endif
 
 #define SYSFS_PATH_MAX 256
 #define MAX_PORTS 1024
@@ -395,7 +398,7 @@ iflinux_macphy(struct lldpd_hardware *hardware)
 		port->p_macphy.autoneg_enabled = (ethc.autoneg == AUTONEG_DISABLE) ? 0 : 1;
 		for (j=0; advertised_ethtool_to_rfc3636[j][0]; j++) {
 			if (ethc.advertising & advertised_ethtool_to_rfc3636[j][0])
-				port->p_macphy.autoneg_advertised |= 
+				port->p_macphy.autoneg_advertised |=
 				    advertised_ethtool_to_rfc3636[j][1];
 		}
 		switch (ethc.speed) {
@@ -456,7 +459,19 @@ iface_bond_init(struct lldpd *cfg, struct lldpd_hardware *hardware)
 			hardware->h_ifname)) == -1)
 		return -1;
 	hardware->h_sendfd = fd;
+
+#ifdef ENABLE_OVSDB
+	/*
+	 * Enable multicast only if we need to receive
+	 * Not needed incase of OFF or TX
+	 * */
+	if(hardware->h_enable_dir == HARDWARE_ENABLE_DIR_RX ||
+	        hardware->h_enable_dir == HARDWARE_ENABLE_DIR_RXTX) {
+		interfaces_setup_multicast(cfg, hardware->h_ifname, 0);
+	}
+#else
 	interfaces_setup_multicast(cfg, hardware->h_ifname, 0);
+#endif
 
 	/* Then, we open a raw interface for the master */
 	log_debug("interfaces", "bonded device %s has master %s(%d)",
@@ -572,6 +587,14 @@ iflinux_handle_bond(struct lldpd *cfg, struct interfaces_device_list *interfaces
 				lldpd_hardware_cleanup(cfg, hardware);
 				continue;
 			}
+#ifdef ENABLE_OVSDB
+			hardware->h_enable_dir = HARDWARE_ENABLE_DIR_DEFAULT; //default
+			/*
+			 * Add lldpd hardware interface to hashmap to map with
+			 * ovsrec and pull any ovsdb cofg if present.
+			 */
+			add_lldpd_hardware_interface(hardware);
+#endif
 			bmaster->index = master->index;
 			strlcpy(bmaster->name, master->name, IFNAMSIZ);
 			if (iface_bond_init(cfg, hardware) != 0) {
