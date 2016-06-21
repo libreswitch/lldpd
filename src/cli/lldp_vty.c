@@ -607,7 +607,22 @@ static int lldp_set_mgmt_address(const char *status, boolean set)
   if(set)
     smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR, status);
   else
+  {
+    if(status)
+    {
+      const char *ip = smap_get(&row->other_config,SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+      if(ip)
+      {
+        if(strcmp(ip,status))
+        {
+          vty_out(vty,"Given ip address is not configured as management-address\n");
+          cli_do_config_abort(status_txn);
+          return CMD_OVSDB_FAILURE;
+        }
+      }
+    }
     smap_remove(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_MGMT_ADDR);
+  }
 
   ovsrec_system_set_other_config(row, &smap_other_config);
 
@@ -643,7 +658,7 @@ DEFUN (cli_lldp_set_no_mgmt_address,
        CONFIG_LLDP_STR
        "LLDP management IP address to be sent in TLV\n")
 {
-  return lldp_set_mgmt_address(argv[0], false);
+  return lldp_set_mgmt_address(NULL, false);
 }
 
 DEFUN (cli_lldp_set_no_mgmt_address_arg,
@@ -778,19 +793,19 @@ DEFUN (cli_lldp_show_intf_statistics,
 
         atom.string = lldp_interface_statistics_keys[0];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Packets transmitted :%ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Packets transmitted :%ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_statistics_keys [1];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Packets received :%ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Packets received :%ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_statistics_keys[2];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Packets received and discarded :%ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Packets received and discarded :%ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_statistics_keys[3];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Packets received and unrecognized :%ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Packets received and unrecognized :%ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
         break;
      }
   }
@@ -947,7 +962,7 @@ DEFUN (cli_lldp_show_config,
       vty_out(vty, "%-25s", "Yes");
       vty_out(vty, "%-25s", "Yes");
     }
-    printf("\n");
+    printf("%s",VTY_NEWLINE);
     iter++;
   }
   if(intf_stats)
@@ -1158,13 +1173,13 @@ DEFUN (cli_lldp_show_statistics,
   }
   qsort((void*)intf_stats,nIntf,sizeof(lldp_intf_stats),compare_intf);
   iter=0;
-  vty_out(vty, "LLDP Global statistics:\n\n");
-  vty_out(vty, "Total Packets transmitted : %u\n",total_tx_packets);
-  vty_out(vty, "Total Packets received : %u\n",total_rx_packets);
-  vty_out(vty, "Total Packet received and discarded : %u\n",total_rx_discared);
-  vty_out(vty, "Total TLVs unrecognized : %u\n",total_rx_unrecognized);
+  vty_out(vty, "LLDP Global statistics:%s%s",VTY_NEWLINE,VTY_NEWLINE);
+  vty_out(vty, "Total Packets transmitted : %u%s",total_tx_packets, VTY_NEWLINE);
+  vty_out(vty, "Total Packets received : %u%s",total_rx_packets, VTY_NEWLINE);
+  vty_out(vty, "Total Packet received and discarded : %u%s",total_rx_discared,VTY_NEWLINE);
+  vty_out(vty, "Total TLVs unrecognized : %u%s",total_rx_unrecognized,VTY_NEWLINE);
 
-  vty_out(vty, "LLDP Port Statistics:\n");
+  vty_out(vty, "LLDP Port Statistics:%s",VTY_NEWLINE);
   vty_out(vty, "%-10s","Port-ID");
   vty_out(vty, "%-15s","Tx-Packets");
   vty_out(vty, "%-15s","Rx-packets");
@@ -1290,13 +1305,13 @@ DEFUN (cli_lldp_show_neighbor_info,
     iter++;
   }
 
-  vty_out(vty, "\n");
-  vty_out(vty, "Total neighbor entries : %u\n", total_insert_count);
-  vty_out(vty, "Total neighbor entries deleted : %u\n", total_delete_count);
-  vty_out(vty, "Total neighbor entries dropped : %u\n", total_drop_count);
-  vty_out(vty, "Total neighbor entries aged-out : %u\n", total_ageout_count);
+  vty_out(vty, "%s",VTY_NEWLINE);
+  vty_out(vty, "Total neighbor entries : %u%s", total_insert_count, VTY_NEWLINE);
+  vty_out(vty, "Total neighbor entries deleted : %u%s", total_delete_count, VTY_NEWLINE);
+  vty_out(vty, "Total neighbor entries dropped : %u%s", total_drop_count, VTY_NEWLINE);
+  vty_out(vty, "Total neighbor entries aged-out : %u%s", total_ageout_count, VTY_NEWLINE);
 
-  vty_out(vty, "\n");
+  vty_out(vty, "%s",VTY_NEWLINE);
   vty_out(vty, "%-15s","Local Port");
   vty_out(vty, "%-25s","Neighbor Chassis-ID");
   vty_out(vty, "%-25s","Neighbor Port-ID");
@@ -1312,7 +1327,7 @@ DEFUN (cli_lldp_show_neighbor_info,
     vty_out (vty, "%-25s", nbr_info[iter].chassis_id);
     vty_out (vty, "%-25s", nbr_info[iter].port_id);
     vty_out (vty, "%-10s", nbr_info[iter].chassis_ttl);
-    printf("\n");
+    printf("%s",VTY_NEWLINE);
     iter++;
   }
 
@@ -1351,7 +1366,9 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
     "chassis_capability_enabled",
     "chassis_name",
     "chassis_description",
-    "mgmt_ip_list"
+    "mgmt_ip_list",
+    "port_description",
+    "port_pvid"
   };
 
   unsigned int index;
@@ -1368,53 +1385,62 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
         datum = ovsrec_interface_get_lldp_statistics(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
         atom.string = lldp_interface_neighbor_info_keys[0];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries               : %ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Neighbor entries               : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[1];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries deleted       : %ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Neighbor entries deleted       : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[2];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries dropped       : %ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Neighbor entries dropped       : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[3];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries age-out       : %ld\n",(index == UINT_MAX)? 0 : datum->values[index].integer);
+        vty_out(vty, "Neighbor entries age-out       : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
 
         datum = ovsrec_interface_get_lldp_neighbor_info(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_STRING);
 
         atom.string = lldp_interface_neighbor_info_keys[9];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-Name          : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Neighbor Chassis-Name          : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[10];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-Description   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Neighbor Chassis-Description   : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[4];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Chassis-ID            : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Neighbor Chassis-ID            : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[11];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Management-Address    : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Neighbor Management-Address    : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[7];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Chassis Capabilities Available : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Chassis Capabilities Available : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[8];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Chassis Capabilities Enabled   : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Chassis Capabilities Enabled   : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[5];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor Port-ID               : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "Neighbor Port-ID               : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
+        atom.string = lldp_interface_neighbor_info_keys[12];
+        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+        vty_out(vty, "Neighbor Port-Description      : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
+        atom.string = lldp_interface_neighbor_info_keys[13];
+        index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
+        vty_out(vty, "Neighbor Port VLAN Id          : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[6];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "TTL                            : %s\n",(index == UINT_MAX)? "" : datum->values[index].string);
+        vty_out(vty, "TTL                            : %s%s",(index == UINT_MAX)? "" : datum->values[index].string, VTY_NEWLINE);
+
         break;
      }
   }
@@ -1713,6 +1739,32 @@ DEFUN (cli_lldp_show_local_device,
     return CMD_SUCCESS;
 }
 
+/*-----------------------------------------------------------------------------
+| Function : is_parent_interface_split
+| Responsibility : Check if parent interface has been split
+| Parameters :
+|   const struct ovsrec_interface *parent_iface : Parent Interface row data
+|                                                 for the specific child
+| Return : bool : returns true/false
+-----------------------------------------------------------------------------*/
+static bool
+is_parent_interface_split(const struct ovsrec_interface *parent_iface)
+{
+    const char *lanes_split_value = NULL;
+    bool is_split = false;
+
+    lanes_split_value = smap_get(&parent_iface->user_config,
+                               INTERFACE_USER_CONFIG_MAP_LANE_SPLIT);
+    if ((lanes_split_value != NULL) &&
+        (strcmp(lanes_split_value,
+                INTERFACE_USER_CONFIG_MAP_LANE_SPLIT_SPLIT) == 0))
+      {
+        /* Parent interface is split.
+         * Display child interface configurations. */
+        is_split = true;
+      }
+    return is_split;
+}
 
 /* set LLDP interface state as TX, RX or both */
 int lldp_ovsdb_if_lldp_state(const char *ifvalue, const lldp_tx_rx state) {
@@ -1741,6 +1793,14 @@ int lldp_ovsdb_if_lldp_state(const char *ifvalue, const lldp_tx_rx state) {
   {
     if(strcmp(row->name, ifvalue) == 0)
     {
+      if (is_parent_interface_split(row))
+      {
+          vty_out(vty,
+                  "This interface has been split. Operation"
+                  " not allowed%s", VTY_NEWLINE);
+          cli_do_config_abort (status_txn);
+          return 1;
+      }
       state_value = smap_get(&row->other_config, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
       smap_clone(&smap_other_config, &row->other_config);
       if(state == LLDP_TX)
@@ -1842,6 +1902,14 @@ int lldp_ovsdb_if_lldp_nodirstate(const char *ifvalue, const lldp_tx_rx state)
   {
     if(strcmp(row->name, ifvalue) == 0)
     {
+     if (is_parent_interface_split(row))
+      {
+          vty_out(vty,
+                  "This interface has been split. Operation"
+                  " not allowed%s", VTY_NEWLINE);
+          cli_do_config_abort (status_txn);
+          return 1;
+      }
       ifexists = true;
       state_value = smap_get(&row->other_config, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
       smap_clone(&smap_other_config, &row->other_config);
