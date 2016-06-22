@@ -278,7 +278,7 @@ DEFUN (cli_lldp_set_reinit_time,
        lldp_set_global_reinit_time_cmd,
        "lldp reinit <1-10>",
        CONFIG_LLDP_STR
-       "Set reinit timer, time in seconds to wait before performing LLDP"
+       "Set reinit timer, time in seconds to wait before performing LLDP "
        "initialization on any interface\n"
        "Reinit time (Default: 2)\n")
 {
