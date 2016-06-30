@@ -1091,7 +1091,6 @@ lldpd_reconfigure_port(struct port_data *port)
                 if (!intf) {
                     continue;
                 }
-		intf->portdata = port;
 		/*
 		 * - Add lldp hardware to our structure to allow
 		 *   cleanup of lldp hardware in case row gets deleted.
@@ -1100,6 +1099,7 @@ lldpd_reconfigure_port(struct port_data *port)
 		 *
 		 */
 		if (intf->hw) {
+			intf->portdata = port;
 			port->interfaces[k] = intf;
 		}
 
@@ -2514,10 +2514,12 @@ lldpd_run(struct lldpd *cfg)
 			/* Sets the 'status_txn_try_again' if the transaction fails. */
 			if (status == TXN_SUCCESS) {
 				confirm_txn_try_again = false;
+			} else if (status == TXN_TRY_AGAIN) {
+				confirm_txn_try_again = true;
 			} else {
 				VLOG_INFO("%s OVSDB write failure status= %d", __FUNCTION__,
 					  status);
-				confirm_txn_try_again = true;
+				confirm_txn_try_again = false;
 			}
 		}
 	}
@@ -2552,6 +2554,7 @@ ovsdb_init(const char *db_path)
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_lldp_statistics);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_mgmt_intf_status);
 	ovsdb_idl_add_column(idl, &ovsrec_system_col_status);
+	ovsdb_idl_add_column(idl, &ovsrec_system_col_hostname);
 	ovsdb_idl_omit_alert(idl, &ovsrec_system_col_status);
 
 	ovsdb_idl_add_table(idl, &ovsrec_table_interface);
@@ -2802,11 +2805,14 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 		} else {
 			itf = sh_node->data;
 			itf->hw = hw;
+			itf->portdata = NULL;
             /* Hash entry exists since ovsdb row has been inserted already */
 			/* Set interface lldp_enable_dir to hw from ovsrec */
-			ifrow_other_config_lldp_enable_dir =
-					     smap_get(&itf->ifrow->other_config,
-					     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+			if (itf->ifrow) {
+				ifrow_other_config_lldp_enable_dir =
+						     smap_get(&itf->ifrow->other_config,
+						     INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+			}
 
 			if (ifrow_other_config_lldp_enable_dir) {
 				if (strcmp(ifrow_other_config_lldp_enable_dir,
@@ -2858,6 +2864,7 @@ add_lldpd_hardware_interface(struct lldpd_hardware *hw)
 			}
 
 			if (port) {
+				itf->portdata = port;
 				lldpd_reconfigure_port(port);
 			}
 		}
