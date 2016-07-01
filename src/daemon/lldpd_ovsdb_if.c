@@ -1,4 +1,3 @@
-
 /*
  * (c) Copyright 2016 Hewlett Packard Enterprise Development LP
  *
@@ -2263,6 +2262,50 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 }
 
 /*
+ * This function sets the default value at first time,
+ * by default lldp is enabled.
+ */
+
+static bool
+lldpd_ovsdb_initialise(struct ovsdb_idl *idl)
+{
+	const struct ovsrec_system *sys_row = NULL;
+	enum ovsdb_idl_txn_status txn_status;
+	struct ovsdb_idl_txn *status_txn;
+	struct smap smap_other_config;
+
+	smap_init(&smap_other_config);
+
+	sys_row = ovsrec_system_first(idl);
+	if (sys_row != NULL) {
+		status_txn = ovsdb_idl_txn_create(idl);
+
+		const char *lldp_status = smap_get(&sys_row->other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
+		if (lldp_status  == NULL)
+		{
+			smap_clone(&smap_other_config, &sys_row->other_config);
+			smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,"true");
+
+			ovsrec_system_set_other_config(sys_row, &smap_other_config);
+			txn_status = ovsdb_idl_txn_commit_block(status_txn);
+
+			if(txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
+			{
+				smap_destroy(&smap_other_config);
+				ovsdb_idl_txn_destroy(status_txn);
+				return true;
+			}
+			else
+			{
+				VLOG_ERR("ovsdb transaction commit error");
+				smap_destroy(&smap_other_config);
+				ovsdb_idl_txn_destroy(status_txn);
+			}
+		}
+	}
+	return false;
+}
+/*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
  * It's called after a transaction failure (e.g. neighbor update failure)
@@ -2305,6 +2348,7 @@ lldpd_ovsdb_nbrs_change_all(struct ovsdb_idl *idl, struct lldpd *cfg)
 
 	return;
 }
+
 
 static void
 lldpd_reconfigure(struct ovsdb_idl *idl, struct lldpd *g_lldp_cfg)
@@ -2460,6 +2504,7 @@ lldpd_run(struct lldpd *cfg)
 {
 	bool nbr_change;
 	static struct ovsdb_idl_txn *confirm_txn = NULL;
+	static bool lldpd_initialised;
 
 	ovsdb_idl_run(idl);
 	unixctl_server_run(appctl);
@@ -2478,6 +2523,7 @@ lldpd_run(struct lldpd *cfg)
 	lldpd_chk_for_system_configured();
 
 	if (system_configured) {
+		lldpd_initialised = lldpd_initialised ? lldpd_initialised : lldpd_ovsdb_initialise(idl);
 		lldpd_reconfigure(idl, cfg);
 		lldpd_stats_run(cfg);
 		daemonize_complete();
@@ -2543,7 +2589,6 @@ ovsdb_init(const char *db_path)
 	idl = ovsdb_idl_create(db_path, &ovsrec_idl_class, false, true);
 	idl_seqno = ovsdb_idl_get_seqno(idl);
 	ovsdb_idl_set_lock(idl, "ops_lldpd");
-	ovsdb_idl_verify_write_only(idl);
 
 	/* Choose some OVSDB tables and columns to cache */
 
