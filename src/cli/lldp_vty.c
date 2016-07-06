@@ -757,6 +757,48 @@ DEFUN (cli_lldp_show_tlv,
 
   return CMD_SUCCESS;
 }
+bool
+is_not_valid_interface(const struct ovsrec_interface *ifrow)
+{
+   bool is_not_valid = false;
+   const char *state_value;
+
+   if(!ifrow->split_parent)
+   {
+       /*Parent (orphan) interface */
+       state_value = smap_get(&ifrow->user_config,
+                               INTERFACE_USER_CONFIG_MAP_LANE_SPLIT);
+       if(state_value
+              &&  !strcmp(state_value,
+                     INTERFACE_USER_CONFIG_MAP_LANE_SPLIT_SPLIT))
+       {
+           VLOG_DBG("Skipped parent int %s, split_config= %s", ifrow->name, state_value);
+           vty_out (vty, "Interface %s is split. Check the child interfaces"
+                         " for details. %s", ifrow->name,
+                         VTY_NEWLINE);
+           is_not_valid = true;
+        }
+   }
+   else
+   {   /*Child interface */
+       /*Check if the parent was split */
+       state_value = smap_get(&ifrow->split_parent->user_config,
+                                INTERFACE_USER_CONFIG_MAP_LANE_SPLIT);
+       if(!state_value
+             || strcmp(state_value,
+                   INTERFACE_USER_CONFIG_MAP_LANE_SPLIT_SPLIT))
+       {
+           VLOG_DBG("Skipped child int %s, split_config of parent= %s", ifrow->name, state_value);
+
+           /* can't show child interface config when parent is not split */
+           vty_out (vty, "Parent interface of %s is not split. "
+                         "Check the parent interface for "
+                         "details.%s", ifrow->name, VTY_NEWLINE);
+           is_not_valid = true;
+        }
+    }
+     return is_not_valid;
+}
 
 DEFUN (cli_lldp_show_intf_statistics,
        lldp_show_intf_statistics_cmd,
@@ -778,15 +820,18 @@ DEFUN (cli_lldp_show_intf_statistics,
 
   unsigned int index;
 
-  vty_out (vty, "LLDP statistics: %s%s", VTY_NEWLINE, VTY_NEWLINE);
-
   OVSREC_INTERFACE_FOR_EACH(ifrow, idl)
   {
      if(0 == strcmp(argv[0],ifrow->name))
      {
+        if(is_not_valid_interface(ifrow))
+           return CMD_SUCCESS;
+
         union ovsdb_atom atom;
 
         port_found = true;
+
+        vty_out (vty, "LLDP statistics: %s%s", VTY_NEWLINE, VTY_NEWLINE);
         vty_out (vty, "Port Name: %s%s", ifrow->name, VTY_NEWLINE);
 
         datum = ovsrec_interface_get_lldp_statistics(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
@@ -969,7 +1014,6 @@ DEFUN (cli_lldp_show_config,
     free(intf_stats);
   return CMD_SUCCESS;
 }
-
 DEFUN (cli_lldp_show_config_if,
        lldp_show_config_cmd_if,
        "show lldp configuration IFNAME",
@@ -985,7 +1029,52 @@ DEFUN (cli_lldp_show_config_if,
   int hold_time = 0;
   lldp_intf_stats *new_intf_stats = NULL;
 
-  row = ovsrec_system_first(idl);
+  OVSREC_INTERFACE_FOR_EACH(ifrow, idl)
+  {
+    if(ifrow && (0 != strcmp(ifrow->type, OVSREC_INTERFACE_TYPE_SYSTEM)))
+    {
+       /* Skipping internal interfaces */
+       continue;
+    }
+
+    if (0 == strcmp(ifrow->name, argv[0]))
+    {
+      if(is_not_valid_interface(ifrow))
+         return CMD_SUCCESS;
+
+      new_intf_stats = xcalloc(1, sizeof *new_intf_stats);
+      if(new_intf_stats)
+      {
+            const char *lldp_enable_dir = smap_get(&ifrow->other_config , INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
+
+            memset(new_intf_stats->name, '\0', INTF_NAME_SIZE);
+            strncpy(new_intf_stats->name, ifrow->name, INTF_NAME_SIZE);
+            if(!lldp_enable_dir)
+            {
+              new_intf_stats->lldp_dir = LLDP_TXRX;
+            }
+            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) == 0)
+            {
+              new_intf_stats->lldp_dir = LLDP_OFF;
+            }
+            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX) == 0)
+            {
+              new_intf_stats->lldp_dir = LLDP_TX;
+            }
+            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX) == 0)
+            {
+              new_intf_stats->lldp_dir = LLDP_RX;
+            }
+            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RXTX) == 0)
+            {
+              new_intf_stats->lldp_dir = LLDP_TXRX;
+            }
+      }
+      break;
+    }
+  }
+
+    row = ovsrec_system_first(idl);
 
   if(!row)
   {
@@ -1022,47 +1111,6 @@ DEFUN (cli_lldp_show_config_if,
   vty_out(vty, "%-25s","Reception-enabled");
   vty_out(vty, "%s", VTY_NEWLINE);
 
-  OVSREC_INTERFACE_FOR_EACH(ifrow, idl)
-  {
-    if(ifrow && (0 != strcmp(ifrow->type, OVSREC_INTERFACE_TYPE_SYSTEM)))
-    {
-       /* Skipping internal interfaces */
-       continue;
-    }
-
-    if (0 == strcmp(ifrow->name, argv[0]))
-    {
-      new_intf_stats = xcalloc(1, sizeof *new_intf_stats);
-      if(new_intf_stats)
-      {
-            const char *lldp_enable_dir = smap_get(&ifrow->other_config , INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR);
-
-            memset(new_intf_stats->name, '\0', INTF_NAME_SIZE);
-            strncpy(new_intf_stats->name, ifrow->name, INTF_NAME_SIZE);
-            if(!lldp_enable_dir)
-            {
-              new_intf_stats->lldp_dir = LLDP_TXRX;
-            }
-            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_OFF) == 0)
-            {
-              new_intf_stats->lldp_dir = LLDP_OFF;
-            }
-            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_TX) == 0)
-            {
-              new_intf_stats->lldp_dir = LLDP_TX;
-            }
-            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RX) == 0)
-            {
-              new_intf_stats->lldp_dir = LLDP_RX;
-            }
-            else if(strcmp(lldp_enable_dir, INTERFACE_OTHER_CONFIG_MAP_LLDP_ENABLE_DIR_RXTX) == 0)
-            {
-              new_intf_stats->lldp_dir = LLDP_TXRX;
-            }
-      }
-      break;
-    }
-  }
   vty_out (vty, "%-6s", new_intf_stats->name);
   if(new_intf_stats->lldp_dir == LLDP_OFF)
   {
@@ -1377,6 +1425,9 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
   {
      if(0 == strcmp(argv[0],ifrow->name))
      {
+        if(is_not_valid_interface(ifrow))
+           return CMD_SUCCESS;
+
         union ovsdb_atom atom;
 
         port_found = true;
