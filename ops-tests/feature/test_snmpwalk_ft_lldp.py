@@ -184,6 +184,7 @@ def snmpwalk_v3_test_remote(ops1, hs1):
         assert "Timeout: No Response" not in line, "snmpwalk timed out"
 
 
+@mark.gate
 @mark.platform_incompatible(['docker'])
 def test_snmpwalk_ft_lldp(topology, step):
 

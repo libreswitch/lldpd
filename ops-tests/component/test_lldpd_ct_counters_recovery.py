@@ -20,7 +20,7 @@
 OpenSwitch Test for lldp related configurations.
 """
 
-# from pytest import mark
+from pytest import mark
 from time import sleep
 
 TOPOLOGY = """
@@ -92,6 +92,7 @@ def get_lldp_rx_count(dut, port):
     return lldp_rx_int_value
 
 
+@mark.gate
 def test_lldpd_ct_counters_recovery(topology, step):
     ops1 = topology.get('ops1')
     ops2 = topology.get('ops2')
