@@ -2265,46 +2265,46 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
  * This function sets the default value at first time,
  * by default lldp is enabled.
  */
-
 static bool
 lldpd_ovsdb_initialise(struct ovsdb_idl *idl)
 {
 	const struct ovsrec_system *sys_row = NULL;
-	enum ovsdb_idl_txn_status txn_status;
-	struct ovsdb_idl_txn *status_txn;
+	enum ovsdb_idl_txn_status txn_status = TXN_ERROR;
+	struct ovsdb_idl_txn *status_txn = NULL;
 	struct smap smap_other_config;
+	bool ret = false;
 
 	smap_init(&smap_other_config);
-
 	sys_row = ovsrec_system_first(idl);
+
 	if (sys_row != NULL) {
-		status_txn = ovsdb_idl_txn_create(idl);
+		const char *lldp_status = smap_get(&sys_row->other_config,
+							SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
+	        if (lldp_status  == NULL)
+	        {
+			status_txn = ovsdb_idl_txn_create(idl);
+	                smap_clone(&smap_other_config, &sys_row->other_config);
+	                smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,"true");
 
-		const char *lldp_status = smap_get(&sys_row->other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
-		if (lldp_status  == NULL)
-		{
-			smap_clone(&smap_other_config, &sys_row->other_config);
-			smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE,"true");
+	                ovsrec_system_set_other_config(sys_row, &smap_other_config);
+	                txn_status = ovsdb_idl_txn_commit_block(status_txn);
+			ovsdb_idl_txn_destroy(status_txn);
 
-			ovsrec_system_set_other_config(sys_row, &smap_other_config);
-			txn_status = ovsdb_idl_txn_commit_block(status_txn);
-
-			if(txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
+	                if(txn_status == TXN_SUCCESS || txn_status == TXN_UNCHANGED)
 			{
-				smap_destroy(&smap_other_config);
-				ovsdb_idl_txn_destroy(status_txn);
-				return true;
-			}
-			else
-			{
-				VLOG_ERR("ovsdb transaction commit error");
-				smap_destroy(&smap_other_config);
-				ovsdb_idl_txn_destroy(status_txn);
-			}
-		}
+				ret = true;
+				VLOG_DBG("LLDP enable default setting success");
+	                }
+	        }
 	}
-	return false;
+
+	smap_destroy(&smap_other_config);
+	return ret;
 }
+
+
+
+
 /*
  * This function is called to sync up LLDP internal neighbor info
  * with OVSDB by copying LLDP table info to OVSDB for each LLDP interface
