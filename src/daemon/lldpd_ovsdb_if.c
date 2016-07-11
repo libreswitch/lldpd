@@ -2239,7 +2239,7 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
          * in which lldpd fails to report aged out nbr entries in a timely
          * manner.
 	 */
-
+        int64_t values[LLDPD_TOTAL_STATS_PER_INTERFACE] = {0};
 	OVSREC_INTERFACE_FOR_EACH(ifrow, idl) {
 		last_update_str =
 			smap_get(&ifrow->lldp_neighbor_info, "port_lastupdate");
@@ -2255,6 +2255,10 @@ lldpd_ovsdb_nbrs_run(struct ovsdb_idl *idl, struct lldpd *cfg)
 				VLOG_INFO("%s aging out interfcae %s", __FUNCTION__,
 					  ifrow->name);
 				ovsrec_interface_set_lldp_neighbor_info(ifrow, NULL);
+                                ovsrec_interface_set_lldp_statistics(ifrow,
+                                             lldp_interface_statistics_keys,
+                                             values,
+                                             LLDPD_TOTAL_STATS_PER_INTERFACE);
 				nbr_change = true;
 			}
 		}
