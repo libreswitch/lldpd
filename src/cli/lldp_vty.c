@@ -107,10 +107,7 @@ static int lldp_set_global_status(const char *status)
 
   smap_clone(&smap_other_config, &row->other_config);
 
-  if(strcmp("true",status) == 0)
-    smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE, status);
-  else
-    smap_remove(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE);
+  smap_replace(&smap_other_config, SYSTEM_OTHER_CONFIG_MAP_LLDP_ENABLE, status);
 
   ovsrec_system_set_other_config(row, &smap_other_config);
 
