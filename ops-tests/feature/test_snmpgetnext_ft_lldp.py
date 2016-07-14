@@ -43,35 +43,43 @@ hs1:1 -- ops1:sp1
 """
 
 
-def snmpGetNext(ops1, version, accessControl, host, OID, extrav3conf = None):
-
+def snmpgetnext(ops1, version, accesscontrol, host, oid, extrav3conf=None):
     if version is "v1":
-        retStruct = ops1("snmpgetnext -v1 -c"+accessControl+ " " +host+ " " + OID + " ", shell='bash')
-        return retStruct
+        retstruct = ops1("snmpgetnext -v1 -c" + accesscontrol + ""
+                         " " + host + " " + oid + " ", shell='bash')
+        return retstruct
     elif version is "v2c":
-        retStruct = ops1("snmpgetnext -v2c -c"+accessControl+ " " +host+ " " + OID + " ", shell='bash')
-        return retStruct
-    elif version is "v3" :
-        retStruct = ops1("snmpgetnext -v3 " +extrav3conf+ " " +host+ " " + OID + " ", shell='bash')
-        return retStruct
-
+        retstruct = ops1("snmpgetnext -v2c -c" + accesscontrol + ""
+                         " " + host + " " + oid + " ", shell='bash')
+        return retstruct
+    elif version is "v3":
+        retstruct = ops1("snmpgetnext -v3 " + extrav3conf + ""
+                         " " + host + " " + oid + " ", shell='bash')
+        return retstruct
 
 
 def snmpgetnext_v1_test_local(ops1):
+    retstruct = snmpgetnext(ops1, "v1", "public", "localhost", ""
+                            ".1.0.8802.1.1.2.1.1.1.0")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext"
+    "v1 failed to get configured value from the OVSDB"
 
-    retStruct = snmpGetNext(ops1, "v1","public","localhost", ".1.0.8802.1.1.2.1.1.1.0")
-    assert "INTEGER: 8" in retStruct , "snmpget v1 failed to get configured value from the OVSDB"
 
 def snmpgetnext_v2c_test_local(ops1):
+    retstruct = snmpgetnext(ops1, "v2c", "public", "localhost", ""
+                            ".1.0.8802.1.1.2.1.1.1.0")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext"
+    " v2c failed to get configured value from the OVSDB"
 
-    retStruct = snmpGetNext(ops1, "v2c","public","localhost", ".1.0.8802.1.1.2.1.1.1.0")
-    assert "INTEGER: 8" in retStruct , "snmpget v1 failed to get configured value from the OVSDB"
 
 def snmpgetnext_v3_test_local(ops1):
 
-    retStruct = snmpGetNext(ops1, "v3","None","localhost", ".1.0.8802.1.1.2.1.1.1.0",
-                        "-u testv3user -l authNoPriv -a md5 -A password")
-    assert "INTEGER: 8" in retStruct , "snmpget v1 failed to get configured value from the OVSDB"
+    retstruct = snmpgetnext(ops1, "v3", "None", "localhost", ""
+                            ".1.0.8802.1.1.2.1.1.1.0",
+                            "-u testv3user -l authNoPriv"
+                            " -a md5 -A password")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext"
+    " v3 failed to get configured value from the OVSDB"
 
 
 def config(ops1, hs1):
@@ -101,39 +109,47 @@ def config(ops1, hs1):
     ping = hs1.libs.ping.ping(1, '10.10.10.4')
     assert ping['transmitted'] == ping['received'] == 1
 
+
 def unconfig(ops1, hs1):
 
     # Configure auth user - testv3user
     with ops1.libs.vtysh.Configure() as ctx:
         ctx.no_snmpv3_user_auth_auth_pass('testv3user', auth_protocol='md5',
-                                       auth_password='password')
-    result = ops1.libs.vtysh.show_snmpv3_users()
+                                          auth_password='password')
 
 
 def snmpgetnext_v1_test_remote(hs1):
 
-    retStruct = hs1("snmpgetnext -v1 -cpublic 10.10.10.4:161 .1.0.8802.1.1.2.1.1.1.0")
-    assert "INTEGER: 8" in retStruct , "snmpget v1 failed to get configured value from the OVSDB"
+    retstruct = hs1("snmpgetnext -v1 -cpublic 10.10.10.4:161"
+                    " .1.0.8802.1.1.2.1.1.1.0")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext"
+    " v1 failed to get configured value from the OVSDB"
+
 
 def snmpgetnext_v2c_test_remote(hs1):
 
-    retStruct = hs1("snmpgetnext -v2c -cpublic 10.10.10.4:161 .1.0.8802.1.1.2.1.1.1.0")
-    assert "INTEGER: 8" in retStruct , "snmpget v2c failed to get configured value from the OVSDB"
+    retstruct = hs1("snmpgetnext -v2c -cpublic 10.10.10.4:161"
+                    " .1.0.8802.1.1.2.1.1.1.0")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext "
+    " v2c failed to get configured value from the OVSDB"
+
 
 def snmpgetnext_v3_test_remote(ops1, hs1):
 
-    retStruct = hs1("snmpgetnext -v3 -u testv3user -l authNoPriv -a md5 -A password 10.10.10.4:161 .1.0.8802.1.1.2.1.1.1.0")
-    assert "INTEGER: 8" in retStruct , "snmpget v3 failed to get configured value from the OVSDB"
+    retstruct = hs1("snmpgetnext -v3 -u testv3user -l authNoPriv "
+                    "-a md5 -A password 10.10.10.4:161"
+                    " .1.0.8802.1.1.2.1.1.1.0")
+    assert "INTEGER: 8" in retstruct, "snmpgetnext"
+    " v3 failed to get configured value from the OVSDB"
 
 
 @mark.platform_incompatible(['docker'])
-
 def test_snmpgetnext_ft_lldp(topology, step):
 
     ops1 = topology.get("ops1")
     hs1 = topology.get("hs1")
 
-    config(ops1,hs1)
+    config(ops1, hs1)
     sleep(30)
 
     snmpgetnext_v1_test_local(ops1)
@@ -141,6 +157,6 @@ def test_snmpgetnext_ft_lldp(topology, step):
     snmpgetnext_v3_test_local(ops1)
     snmpgetnext_v1_test_remote(hs1)
     snmpgetnext_v2c_test_remote(hs1)
-    snmpgetnext_v3_test_remote(ops1,hs1)
+    snmpgetnext_v3_test_remote(ops1, hs1)
 
-    unconfig(ops1,hs1)
+    unconfig(ops1, hs1)
