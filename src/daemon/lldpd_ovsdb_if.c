@@ -1310,9 +1310,9 @@ set_lldp_mgmt_address(const struct ovsrec_system *ovs,
 					free(g_lldp_cfg->g_config.c_mgmt_pattern);
 
 				g_lldp_cfg->g_config.c_mgmt_pattern = xstrdup(lldp_mgmt_pattern);
+				VLOG_DBG("Configured lldp mgmt_pattern is [%s]", lldp_mgmt_pattern);
+				log_event("MGMT_PATTERN", EV_KV("value", "%s", lldp_mgmt_pattern));
 			}
-                        VLOG_DBG("Configured lldp mgmt_pattern is [%s]", lldp_mgmt_pattern);
-                        log_event("MGMT_PATTERN", EV_KV("value", "%s", lldp_mgmt_pattern));
                         TAILQ_INSERT_TAIL(&LOCAL_CHASSIS(g_lldp_cfg)->c_mgmt, mgmt, m_entries);
 		}
 
@@ -1423,7 +1423,7 @@ lldpd_apply_global_changes(struct ovsdb_idl *idl,
 			VLOG_INFO("Configured lldp  tx-timer [%d]",
 				  g_lldp_cfg->g_config.c_tx_interval);
                         /* Log an event log */
-                        log_event("LLDP_TX_TIMER", EV_KV("value", "%d",
+                        log_event("LLDP_TX_TIMER", EV_KV("hold", "%d",
                             g_lldp_cfg->g_config.c_tx_interval));
 			*send_now = 1;
 		}
