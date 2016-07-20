@@ -2812,7 +2812,7 @@ del_lldpd_hardware_interface(struct lldpd_hardware *hw)
 			free(itf->name);
 			free(sh_node->data);
 			shash_delete(&all_interfaces, sh_node);
-		} else {
+		} else if (itf->hw == hw) {
 			itf->hw = NULL;
 		}
 	}
