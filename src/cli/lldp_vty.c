@@ -908,6 +908,7 @@ DEFUN (cli_lldp_show_config,
   lldp_intf_stats *intf_stats = NULL;
   uint  iter = 0, nIntf = 0;
   const struct ovsrec_subsystem *sub_row = NULL;
+  int reinit_delay = SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT_DEFAULT;
   row = ovsrec_system_first(idl);
   sub_row = ovsrec_subsystem_first(idl);
   if(!row)
@@ -934,11 +935,17 @@ DEFUN (cli_lldp_show_config,
                              SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD,
                              SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD_DEFAULT);
 
+  reinit_delay = smap_get_int(&row->other_config,
+                             SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT,
+                             SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT_DEFAULT);
+
   vty_out(vty, "LLDP Enabled :%s%s", lldp_enabled?"Yes":"No",VTY_NEWLINE);
 
   vty_out(vty, "LLDP Transmit Interval :%d%s", tx_interval, VTY_NEWLINE);
 
   vty_out(vty, "LLDP Hold time Multiplier :%d%s", hold_time, VTY_NEWLINE);
+
+  vty_out(vty, "LLDP Reinit Interval :%d%s", reinit_delay, VTY_NEWLINE);
 
   lldp_show_tlv(row);
 
@@ -1028,6 +1035,7 @@ DEFUN (cli_lldp_show_config_if,
   int tx_interval = 0;
   int hold_time = 0;
   lldp_intf_stats *new_intf_stats = NULL;
+  int reinit_delay = SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT_DEFAULT;
 
   OVSREC_INTERFACE_FOR_EACH(ifrow, idl)
   {
@@ -1097,12 +1105,17 @@ DEFUN (cli_lldp_show_config_if,
                              SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD,
                              SYSTEM_OTHER_CONFIG_MAP_LLDP_HOLD_DEFAULT);
 
+  reinit_delay = smap_get_int(&row->other_config,
+                             SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT,
+                             SYSTEM_OTHER_CONFIG_MAP_LLDP_REINIT_DEFAULT);
+
   vty_out(vty, "LLDP Enabled              :%s%s", lldp_enabled?"Yes":"No",VTY_NEWLINE);
 
   vty_out(vty, "LLDP Transmit Interval    :%d%s", tx_interval, VTY_NEWLINE);
 
   vty_out(vty, "LLDP Hold time Multiplier :%d%s", hold_time, VTY_NEWLINE);
 
+  vty_out(vty, "LLDP Reinit Interval :%d%s", reinit_delay, VTY_NEWLINE);
 
   vty_out(vty, "%sLLDP Port Configuration:%s", VTY_NEWLINE, VTY_NEWLINE);
   vty_out(vty,"--------------------------%s",VTY_NEWLINE);
