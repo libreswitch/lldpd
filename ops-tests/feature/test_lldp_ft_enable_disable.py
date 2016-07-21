@@ -107,11 +107,13 @@ def test_lldp_ft_enable_disable(topology):
 
     print("Step 7- Verify neighbor info on switch 1")
     value = findneighbor(ops1, ops1.ports['1'], ops2.ports['1'])
-    assert str(value) == '1'
+    # Modifying Hardcoded interface 1 to use dynamic assignation
+    assert str(value) == '{}'.format(ops2.ports['1'])
 
     print("Step 8- Verify neighbor info on switch 2")
     value = findneighbor(ops2, ops2.ports['1'], ops1.ports['1'])
-    assert str(value) == '1'
+    # Modifying Hardcoded interface 1 to use dynamic assignation
+    assert str(value) == '{}'.format(ops1.ports['1'])
 
     print("Step 9- Disabling lldp on both switches")
     with ops1.libs.vtysh.Configure() as ctx:
