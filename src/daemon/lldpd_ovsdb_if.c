@@ -992,15 +992,21 @@ del_old_port(struct shash_node *sh_node)
 				if (port->interfaces[k])
 					intf =
 						shash_find_data(&all_interfaces,
-								port->interfaces[k]->hw->h_ifname);
+								port->interfaces[k]->name);
 				if (!intf) {
 					continue;
 				}
+
 				intf->portdata = NULL;
+
 				VLOG_INFO("Cleaning up vlan info for Interface %s",
-					  port->interfaces[k]->hw->h_ifname);
-				lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
-				port->interfaces[k]->hw->h_lport.p_pvid = 0;
+					  port->interfaces[k]->name);
+
+                                if(port->interfaces[k]->hw != NULL) {
+                                        lldpd_vlan_cleanup(&port->interfaces[k]->hw->h_lport);
+                                        port->interfaces[k]->hw->h_lport.p_pvid = 0;
+                                }
+
 				rc++;
 			}
 			free(port->interfaces);
