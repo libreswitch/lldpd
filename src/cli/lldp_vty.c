@@ -1694,7 +1694,7 @@ DEFUN (cli_lldp_show_local_device,
                                          (br && vrf ? ", ":""),
                                          (vrf != NULL ? "Router":""),
                                          VTY_NEWLINE);
-    vty_out(vty,"TTL                    : %d%s", tx_interval * hold_time, VTY_NEWLINE);
+    vty_out(vty,"TTL                    : %d%s", MIN(UINT16_MAX, (tx_interval * hold_time)), VTY_NEWLINE);
     vty_out(vty, "%s", VTY_NEWLINE);
 
     OVSREC_PORT_FOR_EACH(portrow, idl) {
