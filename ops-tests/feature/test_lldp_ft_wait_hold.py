@@ -105,7 +105,7 @@ def test_lldp_ft_wait_hold(topology):
     with ops2.libs.vtysh.ConfigInterface('1') as ctx:
         ctx.no_routing()
 
-    sleep(15)
+    sleep(45)
 
     s1p1 = ops1.ports["1"]
     s2p1 = ops2.ports["1"]
@@ -120,7 +120,7 @@ def test_lldp_ft_wait_hold(topology):
     with ops2.libs.vtysh.Configure() as ctx:
         ctx.no_lldp_enable()
 
-    sleep(15)
+    sleep(45)
 
     print("Step 8- Verifying no neighbor on switch 1 and switch 2")
     value = findneighbor(ops1, s1p1, '')

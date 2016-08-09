@@ -20,7 +20,7 @@
 OpenSwitch Test for lldp related configurations.
 """
 
-# from pytest import mark
+from pytest import mark
 from time import sleep
 
 TOPOLOGY = """
@@ -37,7 +37,19 @@ ops1:if01 -- ops2:if01
 """
 
 
-def configure_lldp(dut, number):
+# Test case Variables
+TIMEOUT = '0'
+
+
+def session_timeout(switch, timeout, step):
+    step('Configure session timeout on DUTS')
+    # Session timeout configuration on DUTs
+    with switch.libs.vtysh.Configure() as ctx:
+        ctx.session_timeout(timeout)
+
+
+def configure_lldp(dut, number, step):
+    step("Step 1- Configure lldp on {} interface {}".format(dut, number))
     pid1 = dut("pidof ops-lldpd", shell="bash").strip()
     assert pid1 != ""
 
@@ -92,6 +104,7 @@ def get_lldp_rx_count(dut, port):
     return lldp_rx_int_value
 
 
+@mark.timeout(1000)
 def test_lldpd_ct_counters_recovery(topology, step):
     ops1 = topology.get('ops1')
     ops2 = topology.get('ops2')
@@ -99,11 +112,18 @@ def test_lldpd_ct_counters_recovery(topology, step):
     assert ops1 is not None
     assert ops2 is not None
 
-    step("Step 1- Configure lldp on switch 1")
-    pid_start1 = configure_lldp(ops1, "1")
+    dut_1_int1 = ops1.ports['if01']
+    dut_2_int1 = ops2.ports['if01']
 
-    step("Step 2- Configure lldp on switch 2")
-    pid_start2 = configure_lldp(ops2, "2")
+    # Configure session timeout on DUTs
+    session_timeout(ops1, TIMEOUT, step)
+    session_timeout(ops2, TIMEOUT, step)
+
+    # step("Step 1- Configure lldp on switch 1")
+    pid_start1 = configure_lldp(ops1, dut_1_int1, step)
+
+    # step("Step 2- Configure lldp on switch 2")
+    pid_start2 = configure_lldp(ops2, dut_2_int1, step)
 
     step("Step 3- Bring interface up on switch 1")
     bring_interface_up(ops1, 'if01')

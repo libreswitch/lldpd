@@ -144,7 +144,6 @@ lldpd_remote_cleanup(struct lldpd_hardware *hardware,
 			* Increment the delete count and clear port entry
 			* for all the port cleanup.
 			*/
-			hardware->h_insert_cnt = 0;
 			hardware->h_delete_cnt++;
 #endif
 			if (expire) expire(hardware, port);

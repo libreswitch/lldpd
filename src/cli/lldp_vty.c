@@ -1367,7 +1367,7 @@ DEFUN (cli_lldp_show_neighbor_info,
   }
 
   vty_out(vty, "%s",VTY_NEWLINE);
-  vty_out(vty, "Total neighbor entries : %u%s", total_insert_count, VTY_NEWLINE);
+  vty_out(vty, "Total neighbor entries : %u%s", (total_insert_count - total_delete_count), VTY_NEWLINE);
   vty_out(vty, "Total neighbor entries deleted : %u%s", total_delete_count, VTY_NEWLINE);
   vty_out(vty, "Total neighbor entries dropped : %u%s", total_drop_count, VTY_NEWLINE);
   vty_out(vty, "Total neighbor entries aged-out : %u%s", total_ageout_count, VTY_NEWLINE);
@@ -1433,6 +1433,8 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
   };
 
   unsigned int index;
+  int64_t insert_cnt = 0;
+  int64_t delete_cnt = 0;
 
   OVSREC_INTERFACE_FOR_EACH(ifrow, idl)
   {
@@ -1449,11 +1451,14 @@ DEFUN (cli_lldp_show_intf_neighbor_info,
         datum = ovsrec_interface_get_lldp_statistics(ifrow, OVSDB_TYPE_STRING, OVSDB_TYPE_INTEGER);
         atom.string = lldp_interface_neighbor_info_keys[0];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries               : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
+        insert_cnt = (index == UINT_MAX) ? 0 : datum->values[index].integer;
 
         atom.string = lldp_interface_neighbor_info_keys[1];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);
-        vty_out(vty, "Neighbor entries deleted       : %ld%s",(index == UINT_MAX)? 0 : datum->values[index].integer,VTY_NEWLINE);
+        delete_cnt = (index == UINT_MAX) ? 0 : datum->values[index].integer;
+
+        vty_out(vty, "Neighbor entries               : %ld%s", (insert_cnt-delete_cnt), VTY_NEWLINE);
+        vty_out(vty, "Neighbor entries deleted       : %ld%s", delete_cnt, VTY_NEWLINE);
 
         atom.string = lldp_interface_neighbor_info_keys[2];
         index = ovsdb_datum_find_key(datum, &atom, OVSDB_TYPE_STRING);

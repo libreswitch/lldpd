@@ -103,7 +103,7 @@ def test_lldp_ft_enable_disable(topology):
     with ops2.libs.vtysh.ConfigInterface('1') as ctx:
         ctx.no_routing()
 
-    sleep(30)
+    sleep(45)
 
     print("Step 7- Verify neighbor info on switch 1")
     value = findneighbor(ops1, ops1.ports['1'], ops2.ports['1'])
@@ -119,7 +119,7 @@ def test_lldp_ft_enable_disable(topology):
     with ops2.libs.vtysh.Configure() as ctx:
         ctx.no_lldp_enable()
 
-    sleep(15)
+    sleep(45)
 
     print("Step 10- Verify no neighbor info on switch 1")
     value = findneighbor(ops1, ops1.ports['1'], '')

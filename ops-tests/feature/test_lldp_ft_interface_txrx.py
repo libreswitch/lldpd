@@ -154,7 +154,7 @@ def test_lldp_ft_interface_txrx(topology):
     with ops2.libs.vtysh.ConfigInterface('4') as ctx:
         ctx.no_routing()
 
-    sleep(30)
+    sleep(45)
 
     s1p1 = ops1.ports['1']
     s1p2 = ops1.ports['2']
